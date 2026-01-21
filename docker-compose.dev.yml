@@ -1,0 +1,36 @@
+# Development docker-compose override file
+# Use this for development with hot reload
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  backend:
+    # Override command to enable hot reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
+    volumes:
+      # Mount all backend code for hot reload
+      - ./backend/app:/app/app
+      - ./backend/reset_password.py:/app/reset_password.py
+      # Keep data volumes
+      - ${VIDEO_STORAGE_DIR:-./data/videos}:/app/data/videos
+
+  queue:
+    volumes:
+      # Mount all backend code
+      - ./backend/app:/app/app
+      - ./backend/reset_password.py:/app/reset_password.py
+      # Keep data volumes
+      - ${VIDEO_STORAGE_DIR:-./data/videos}:/app/data/videos
+
+  frontend:
+    # For frontend development, you can use a dev server
+    # Uncomment below to use Vite dev server instead of nginx
+    # build:
+    #   context: ./frontend
+    #   dockerfile: Dockerfile.dev
+    # ports:
+    #   - "${WEB_PORT:-8080}:5173"
+    # command: npm run dev -- --host 0.0.0.0
+    volumes:
+      # Mount frontend source for development
+      - ./frontend/src:/usr/share/nginx/html/src:ro
+      # Note: Frontend changes require rebuild or use dev server above

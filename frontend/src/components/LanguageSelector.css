@@ -1,0 +1,13 @@
+.language-selector {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  background: white;
+  cursor: pointer;
+}
+
+.language-selector:focus {
+  outline: none;
+  border-color: #667eea;
+}

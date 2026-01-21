@@ -1,0 +1,162 @@
+{
+  "app": {
+    "title": "YouTube Watcher",
+    "loading": "Loading...",
+    "user": "User"
+  },
+  "login": {
+    "title": "YouTube Watcher",
+    "subtitle": "Login",
+    "registerSubtitle": "Register New Account",
+    "username": "Username",
+    "password": "Password",
+    "login": "Login",
+    "register": "Register",
+    "loggingIn": "Logging in...",
+    "registering": "Registering...",
+    "noAccount": "No account? Register",
+    "hasAccount": "Already have an account? Login",
+    "error": {
+      "empty": "Please enter username and password",
+      "loginFailed": "Login failed, please check username and password",
+      "registerFailed": "Registration failed"
+    }
+  },
+  "chat": {
+    "header": {
+      "title": "YouTube Watcher"
+    },
+    "nav": {
+      "history": "History",
+      "settings": "Settings",
+      "logout": "Logout"
+    },
+    "emptyState": "Enter YouTube video URL to start processing",
+    "input": {
+      "placeholder": "Enter YouTube video URL...",
+      "submit": "Submit",
+      "processing": "Processing..."
+    },
+    "message": {
+      "summary": "Summary:",
+      "error": "Error:",
+      "retry": "Retry",
+      "processingFailed": "Processing failed"
+    }
+  },
+  "history": {
+    "title": "History",
+    "nav": {
+      "home": "Home",
+      "settings": "Settings",
+      "logout": "Logout"
+    },
+    "search": {
+      "placeholder": "Search keywords, title or URL...",
+      "button": "Search",
+      "searching": "Searching...",
+      "clear": "Clear"
+    },
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "pageInfo": "Page {{current}} of {{total}} ({{count}} total)"
+    },
+    "emptyState": {
+      "noHistory": "No history records",
+      "noResults": "No matching records found"
+    },
+    "item": {
+      "keywords": "Keywords:",
+      "noKeywords": "No keywords",
+      "summary": "Summary:",
+      "content": "Content:",
+      "noContent": "No content",
+      "edit": "Edit",
+      "save": "Save",
+      "saving": "Saving...",
+      "cancel": "Cancel",
+      "export": "Export Markdown",
+      "exporting": "Exporting...",
+      "retry": "Retry",
+      "retrying": "Retrying...",
+      "delete": "Delete",
+      "deleting": "Deleting...",
+      "deleteTitle": "Delete this record",
+      "deleteConfirm": "Are you sure you want to delete \"{{title}}\"? This action cannot be undone and will delete the video, audio, and transcript files.",
+      "deleteConfirmNoTitle": "Are you sure you want to delete this record? This action cannot be undone and will delete the video, audio, and transcript files.",
+      "generateKeywords": "AI Generate",
+      "generatingKeywords": "Generating...",
+      "generateKeywordsTitle": "Use AI to automatically generate keywords",
+      "markdownPreview": "Markdown Preview:",
+      "editPlaceholder": "Enter or edit Markdown content...",
+      "saveSuccess": "Saved successfully",
+      "saveFailed": "Save failed",
+      "exportFailed": "Export failed",
+      "retryFailed": "Retry failed",
+      "deleteSuccess": "Deleted successfully",
+      "deleteFailed": "Delete failed",
+      "loadFailed": "Failed to load history",
+      "searchFailed": "Search failed",
+      "loadDetailFailed": "Failed to load details",
+      "generateKeywordsSuccess": "Keywords generated successfully",
+      "generateKeywordsFailed": "Failed to generate keywords",
+      "originalUrl": "Original URL:",
+      "reprocess": "Reprocess",
+      "reprocessing": "Reprocessing...",
+      "reprocessTitle": "Reprocess Video",
+      "reprocessDescription": "Reprocess this video with a different language setting",
+      "selectLanguage": "Select Language:",
+      "reprocessSuccess": "Video reprocessing started successfully",
+      "reprocessFailed": "Failed to start reprocessing"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "nav": {
+      "home": "Home",
+      "history": "History",
+      "logout": "Logout"
+    },
+    "password": {
+      "title": "Password Settings",
+      "note": "Password changes require setting WEB_PASSWORD in environment variables, then restarting the service."
+    },
+    "llm": {
+      "title": "LLM Configuration",
+      "note": "LLM configuration requires setting in environment variables:",
+      "items": {
+        "ollamaUrl": "OLLAMA_URL: Ollama service address",
+        "vllmUrl": "VLLM_URL: vLLM API address (optional)",
+        "llmModel": "LLM_MODEL: Model name"
+      }
+    },
+    "hardware": {
+      "title": "Hardware Acceleration",
+      "note": "Hardware acceleration type needs to be set in environment variable ACCELERATION (mlx/cuda/cpu)"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Select your preferred language",
+      "english": "English",
+      "chinese": "中文"
+    }
+  },
+  "queue": {
+    "title": "Processing Queue",
+    "waiting": "Waiting:",
+    "processing": "Processing:",
+    "task": "Task #{{id}} - {{status}}"
+  },
+  "progress": {
+    "status": {
+      "pending": "Pending",
+      "downloading": "Downloading",
+      "converting": "Converting",
+      "transcribing": "Transcribing",
+      "summarizing": "Summarizing",
+      "completed": "Completed",
+      "failed": "Failed"
+    }
+  }
+}

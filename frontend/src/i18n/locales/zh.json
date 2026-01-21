@@ -1,0 +1,162 @@
+{
+  "app": {
+    "title": "YouTube Watcher",
+    "loading": "加载中...",
+    "user": "用户"
+  },
+  "login": {
+    "title": "YouTube Watcher",
+    "subtitle": "登录",
+    "registerSubtitle": "注册新账户",
+    "username": "用户名",
+    "password": "密码",
+    "login": "登录",
+    "register": "注册",
+    "loggingIn": "登录中...",
+    "registering": "注册中...",
+    "noAccount": "没有账户？注册",
+    "hasAccount": "已有账户？登录",
+    "error": {
+      "empty": "请输入用户名和密码",
+      "loginFailed": "登录失败，请检查用户名和密码",
+      "registerFailed": "注册失败"
+    }
+  },
+  "chat": {
+    "header": {
+      "title": "YouTube Watcher"
+    },
+    "nav": {
+      "history": "历史记录",
+      "settings": "设置",
+      "logout": "退出"
+    },
+    "emptyState": "输入YouTube视频URL开始处理",
+    "input": {
+      "placeholder": "输入YouTube视频URL...",
+      "submit": "提交",
+      "processing": "处理中..."
+    },
+    "message": {
+      "summary": "总结:",
+      "error": "错误:",
+      "retry": "重试",
+      "processingFailed": "处理失败"
+    }
+  },
+  "history": {
+    "title": "历史记录",
+    "nav": {
+      "home": "主页",
+      "settings": "设置",
+      "logout": "退出"
+    },
+    "search": {
+      "placeholder": "搜索关键词、标题或URL...",
+      "button": "搜索",
+      "searching": "搜索中...",
+      "clear": "清除"
+    },
+    "pagination": {
+      "previous": "上一页",
+      "next": "下一页",
+      "pageInfo": "第 {{current}} 页，共 {{total}} 页（共 {{count}} 条）"
+    },
+    "emptyState": {
+      "noHistory": "暂无历史记录",
+      "noResults": "未找到匹配的记录"
+    },
+    "item": {
+      "keywords": "关键词:",
+      "noKeywords": "暂无关键词",
+      "summary": "总结:",
+      "content": "内容:",
+      "noContent": "暂无内容",
+      "edit": "编辑",
+      "save": "保存",
+      "saving": "保存中...",
+      "cancel": "取消",
+      "export": "导出Markdown",
+      "exporting": "导出中...",
+      "retry": "重试",
+      "retrying": "重试中...",
+      "delete": "删除",
+      "deleting": "删除中...",
+      "deleteTitle": "删除此记录",
+      "deleteConfirm": "确定要删除 \"{{title}}\" 吗？此操作无法撤销，将同时删除视频、音频和转录文件。",
+      "deleteConfirmNoTitle": "确定要删除这条记录吗？此操作无法撤销，将同时删除视频、音频和转录文件。",
+      "generateKeywords": "AI 生成",
+      "generatingKeywords": "生成中...",
+      "generateKeywordsTitle": "使用 AI 自动生成关键词",
+      "markdownPreview": "Markdown 预览:",
+      "editPlaceholder": "输入或编辑 Markdown 内容...",
+      "saveSuccess": "保存成功",
+      "saveFailed": "保存失败",
+      "exportFailed": "导出失败",
+      "retryFailed": "重试失败",
+      "deleteSuccess": "删除成功",
+      "deleteFailed": "删除失败",
+      "loadFailed": "加载历史记录失败",
+      "searchFailed": "搜索失败",
+      "loadDetailFailed": "加载详情失败",
+      "generateKeywordsSuccess": "关键词生成成功",
+      "generateKeywordsFailed": "生成关键词失败",
+      "originalUrl": "原始链接:",
+      "reprocess": "重新处理",
+      "reprocessing": "重新处理中...",
+      "reprocessTitle": "重新处理视频",
+      "reprocessDescription": "使用不同的语言设置重新处理此视频",
+      "selectLanguage": "选择语言:",
+      "reprocessSuccess": "视频重新处理已开始",
+      "reprocessFailed": "启动重新处理失败"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "nav": {
+      "home": "主页",
+      "history": "历史记录",
+      "logout": "退出"
+    },
+    "password": {
+      "title": "密码设置",
+      "note": "密码修改需要在环境变量中设置 WEB_PASSWORD，然后重启服务。"
+    },
+    "llm": {
+      "title": "LLM配置",
+      "note": "LLM配置需要在环境变量中设置：",
+      "items": {
+        "ollamaUrl": "OLLAMA_URL: Ollama服务地址",
+        "vllmUrl": "VLLM_URL: vLLM API地址（可选）",
+        "llmModel": "LLM_MODEL: 模型名称"
+      }
+    },
+    "hardware": {
+      "title": "硬件加速",
+      "note": "硬件加速类型需要在环境变量中设置 ACCELERATION (mlx/cuda/cpu)"
+    },
+    "language": {
+      "title": "语言",
+      "description": "选择您的首选语言",
+      "english": "English",
+      "chinese": "中文"
+    }
+  },
+  "queue": {
+    "title": "处理队列",
+    "waiting": "等待中:",
+    "processing": "处理中:",
+    "task": "任务 #{{id}} - {{status}}"
+  },
+  "progress": {
+    "status": {
+      "pending": "等待中",
+      "downloading": "下载中",
+      "converting": "转换中",
+      "transcribing": "转录中",
+      "summarizing": "总结中",
+      "completed": "完成",
+      "failed": "失败"
+    }
+  }
+}
