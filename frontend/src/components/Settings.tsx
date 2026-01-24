@@ -21,9 +21,12 @@ const Settings: React.FC<SettingsProps> = ({ onLogout }) => {
       <header className="settings-header">
         <h1>{t('settings.title')}</h1>
         <nav>
-          <Link to="/">{t('settings.nav.home')}</Link>
-          <Link to="/history">{t('settings.nav.history')}</Link>
-          <button onClick={onLogout}>{t('settings.nav.logout')}</button>
+          <span className="username">{localStorage.getItem('username') || t('app.user')}</span>
+          <Link to="/">{t('history.nav.home')}</Link>
+          <Link to="/history">{t('history.title')}</Link>
+          <Link to="/playlist">{t('history.nav.playlist')}</Link>
+          <Link to="/settings">{t('history.nav.settings')}</Link>
+          <button onClick={onLogout}>{t('history.nav.logout')}</button>
         </nav>
       </header>
 

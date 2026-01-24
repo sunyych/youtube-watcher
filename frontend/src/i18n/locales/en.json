@@ -28,6 +28,7 @@
     },
     "nav": {
       "history": "History",
+      "playlist": "Playlist",
       "settings": "Settings",
       "logout": "Logout"
     },
@@ -35,7 +36,8 @@
     "input": {
       "placeholder": "Enter YouTube video URL...",
       "submit": "Submit",
-      "processing": "Processing..."
+      "processing": "Processing...",
+      "addToPlaylist": "Add to playlist"
     },
     "message": {
       "summary": "Summary:",
@@ -48,6 +50,7 @@
     "title": "History",
     "nav": {
       "home": "Home",
+      "playlist": "Playlist",
       "settings": "Settings",
       "logout": "Logout"
     },
@@ -108,8 +111,44 @@
       "reprocessDescription": "Reprocess this video with a different language setting",
       "selectLanguage": "Select Language:",
       "reprocessSuccess": "Video reprocessing started successfully",
-      "reprocessFailed": "Failed to start reprocessing"
+      "reprocessFailed": "Failed to start reprocessing",
+      "play": "Play",
+      "addToPlaylist": "Add to playlist",
+      "addingToPlaylist": "Adding...",
+      "addedToPlaylist": "Added to playlist",
+      "addToPlaylistFailed": "Failed to add to playlist"
     }
+  },
+  "playlist": {
+    "title": "Playlist",
+    "nav": {
+      "home": "Home",
+      "history": "History",
+      "settings": "Settings",
+      "logout": "Logout"
+    },
+    "emptyState": "Playlist is empty",
+    "loadFailed": "Failed to load playlist",
+    "play": "Play",
+    "remove": "Remove",
+    "removeConfirm": "Are you sure you want to remove this video from the playlist?",
+    "removeFailed": "Failed to remove",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "moveFailed": "Failed to move",
+    "clear": "Clear",
+    "clearConfirm": "Are you sure you want to clear the playlist?",
+    "clearSuccess": "Playlist cleared",
+    "clearFailed": "Failed to clear"
+  },
+  "player": {
+    "title": "Video Player",
+    "videoNotFound": "Video not found",
+    "videoNotReady": "Video is not ready yet",
+    "loadFailed": "Failed to load video",
+    "goBack": "Go back",
+    "previous": "Previous",
+    "next": "Next"
   },
   "settings": {
     "title": "Settings",

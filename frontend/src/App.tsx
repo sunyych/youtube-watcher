@@ -4,6 +4,8 @@ import Login from './components/Login'
 import ChatInterface from './components/ChatInterface'
 import HistoryPage from './components/HistoryPage'
 import Settings from './components/Settings'
+import PlaylistPage from './components/PlaylistPage'
+import VideoPlayer from './components/VideoPlayer'
 import './i18n/config'
 import './App.css'
 
@@ -71,6 +73,26 @@ function App() {
           element={
             isAuthenticated ? (
               <Settings onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/playlist"
+          element={
+            isAuthenticated ? (
+              <PlaylistPage onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/player/:videoId"
+          element={
+            isAuthenticated ? (
+              <VideoPlayer onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
             )

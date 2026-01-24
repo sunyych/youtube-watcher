@@ -227,6 +227,7 @@ Ensure Ollama is running on the host and accessible via `host.docker.internal:11
 ### Database connection fails
 
 Check PostgreSQL container:
+
 ```bash
 docker compose ps
 docker compose logs postgres
@@ -237,6 +238,7 @@ docker compose logs postgres
 You can reset a user's password using the command-line tool:
 
 **Using Docker:**
+
 ```bash
 # Interactive mode (recommended)
 docker compose exec backend python reset_password.py --interactive
@@ -249,6 +251,7 @@ docker compose exec backend python reset_password.py --list-users
 ```
 
 **Local development:**
+
 ```bash
 cd backend
 
@@ -264,6 +267,7 @@ python reset_password.py --list-users
 
 **Using API (requires authentication):**
 You can also change your password through the API endpoint:
+
 - `POST /api/auth/change-password`
 - Requires: `old_password` and `new_password` in request body
 - Requires: Bearer token authentication
@@ -273,6 +277,7 @@ You can also change your password through the API endpoint:
 You can change a user's username using the command-line tool:
 
 **Using Docker:**
+
 ```bash
 # Interactive mode (recommended)
 docker compose exec backend python change_username.py --interactive
@@ -288,6 +293,7 @@ docker compose exec backend python change_username.py --list-users
 ```
 
 **Local development:**
+
 ```bash
 cd backend
 
@@ -306,6 +312,7 @@ python change_username.py --list-users
 
 **Using API (requires authentication):**
 You can also change your username through the API endpoint:
+
 - `POST /api/auth/change-username`
 - Requires: `new_username` in request body
 - Requires: Bearer token authentication

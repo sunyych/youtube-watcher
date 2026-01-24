@@ -26,6 +26,12 @@
   align-items: center;
 }
 
+.settings-header nav .username {
+  color: #667eea;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+}
+
 .settings-header nav a {
   color: #667eea;
   text-decoration: none;

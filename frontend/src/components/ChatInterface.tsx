@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { videoApi, historyApi, QueueStatus } from '../services/api'
+import { videoApi, historyApi, QueueStatus, playlistApi } from '../services/api'
 import LanguageSelector from './LanguageSelector'
 import ProgressBar from './ProgressBar'
 import QueueDisplay from './QueueDisplay'
@@ -26,6 +26,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
   const { t } = useTranslation()
   const [url, setUrl] = useState('')
   const [language, setLanguage] = useState('')
+  const [addToPlaylist, setAddToPlaylist] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null)
   const [loading, setLoading] = useState(false)
@@ -101,7 +102,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
         progress: result.progress,
       }
       setMessages((prev) => [...prev, newMessage])
+      
+      // If add to playlist is checked, add to playlist
+      if (addToPlaylist) {
+        try {
+          await playlistApi.addItem(result.id)
+        } catch (err: any) {
+          console.error('Failed to add to playlist:', err)
+          // Don't show error to user, just log it
+        }
+      }
+      
       setUrl('')
+      setAddToPlaylist(false)
     } catch (err: any) {
       alert(err.response?.data?.detail || t('chat.message.processingFailed'))
     } finally {
@@ -140,9 +153,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
         <h1>{t('chat.header.title')}</h1>
         <nav>
           <span className="username">{localStorage.getItem('username') || t('app.user')}</span>
-          <Link to="/history">{t('chat.nav.history')}</Link>
-          <Link to="/settings">{t('chat.nav.settings')}</Link>
-          <button onClick={onLogout}>{t('chat.nav.logout')}</button>
+          <Link to="/">{t('history.nav.home')}</Link>
+          <Link to="/history">{t('history.title')}</Link>
+          <Link to="/playlist">{t('history.nav.playlist')}</Link>
+          <Link to="/settings">{t('history.nav.settings')}</Link>
+          <button onClick={onLogout}>{t('history.nav.logout')}</button>
         </nav>
       </header>
 
@@ -207,6 +222,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
             <button type="submit" disabled={loading || !url.trim()}>
               {loading ? t('chat.input.processing') : t('chat.input.submit')}
             </button>
+          </div>
+          <div className="input-options">
+            <label>
+              <input
+                type="checkbox"
+                checked={addToPlaylist}
+                onChange={(e) => setAddToPlaylist(e.target.checked)}
+                disabled={loading}
+              />
+              {t('chat.input.addToPlaylist')}
+            </label>
           </div>
         </form>
       </div>

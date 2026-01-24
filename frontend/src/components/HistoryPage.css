@@ -26,6 +26,12 @@
   align-items: center;
 }
 
+.history-header nav .username {
+  color: #667eea;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+}
+
 .history-header nav a {
   color: #667eea;
   text-decoration: none;
@@ -151,6 +157,47 @@
 .delete-button:disabled,
 .reprocess-button:disabled {
   background: #ccc;
+  cursor: not-allowed;
+}
+
+/* Play & Add-to-Playlist buttons (Font Awesome icons) */
+.play-button,
+.add-to-playlist-button {
+  padding: 0.5rem 0.75rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  border: none;
+}
+
+/* Green play button */
+.play-button {
+  background: #28a745;
+  color: #fff;
+}
+
+.play-button:hover:not(:disabled) {
+  background: #218838;
+}
+
+/* Neutral add-to-playlist button (white with border) */
+.add-to-playlist-button {
+  background: #fff;
+  color: #333;
+  border: 1px solid #ced4da;
+}
+
+.add-to-playlist-button:hover:not(:disabled) {
+  background: #f1f3f5;
+}
+
+.add-to-playlist-button:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
 }
 

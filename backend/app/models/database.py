@@ -29,8 +29,9 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # Relationship to video records
+    # Relationships
     video_records = relationship("VideoRecord", back_populates="user")
+    playlists = relationship("Playlist", back_populates="user")
 
 
 class VideoRecord(Base):
@@ -54,5 +55,35 @@ class VideoRecord(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
-    # Relationship to user
+    # Relationships
     user = relationship("User", back_populates="video_records")
+
+
+class Playlist(Base):
+    """Playlist model"""
+    __tablename__ = "playlists"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String, nullable=False, default="默认播放列表")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="playlists")
+    items = relationship("PlaylistItem", back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistItem.position")
+
+
+class PlaylistItem(Base):
+    """Playlist item model"""
+    __tablename__ = "playlist_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    playlist_id = Column(Integer, ForeignKey("playlists.id"), nullable=False, index=True)
+    video_record_id = Column(Integer, ForeignKey("video_records.id"), nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    playlist = relationship("Playlist", back_populates="items")
+    video_record = relationship("VideoRecord")

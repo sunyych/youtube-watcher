@@ -146,6 +146,12 @@ export const videoApi = {
     const response = await api.post<VideoStatus>(`/api/video/retry/${id}`)
     return response.data
   },
+  
+  getStreamUrl: (recordId: number): string => {
+    // Use relative URL since nginx proxies /api to backend
+    // No authentication required for local access
+    return `/api/video/${recordId}/stream`
+  },
 }
 
 export const historyApi = {
@@ -200,6 +206,68 @@ export const historyApi = {
   
   deleteHistory: async (id: number): Promise<void> => {
     await api.delete(`/api/history/${id}`)
+  },
+}
+
+export interface PlaylistResponse {
+  id: number
+  name: string
+  user_id: number
+  created_at: string
+  updated_at?: string
+}
+
+export interface PlaylistItemResponse {
+  id: number
+  playlist_id: number
+  video_record_id: number
+  position: number
+  created_at: string
+  title?: string
+  url: string
+  status: string
+  progress: number
+}
+
+export interface AddPlaylistItemRequest {
+  video_record_id: number
+}
+
+export interface UpdatePlaylistItemRequest {
+  position: number
+}
+
+export const playlistApi = {
+  getPlaylist: async (): Promise<PlaylistResponse> => {
+    const response = await api.get<PlaylistResponse>('/api/playlist')
+    return response.data
+  },
+  
+  getPlaylistItems: async (): Promise<PlaylistItemResponse[]> => {
+    const response = await api.get<PlaylistItemResponse[]>('/api/playlist/items')
+    return response.data
+  },
+  
+  addItem: async (videoRecordId: number): Promise<PlaylistItemResponse> => {
+    const response = await api.post<PlaylistItemResponse>('/api/playlist/items', {
+      video_record_id: videoRecordId
+    })
+    return response.data
+  },
+  
+  updateItem: async (itemId: number, position: number): Promise<PlaylistItemResponse> => {
+    const response = await api.put<PlaylistItemResponse>(`/api/playlist/items/${itemId}`, {
+      position
+    })
+    return response.data
+  },
+  
+  removeItem: async (itemId: number): Promise<void> => {
+    await api.delete(`/api/playlist/items/${itemId}`)
+  },
+  
+  clearPlaylist: async (): Promise<void> => {
+    await api.delete('/api/playlist/items')
   },
 }
 

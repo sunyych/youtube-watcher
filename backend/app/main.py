@@ -8,7 +8,7 @@ import logging
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, video, history
+from app.routers import auth, video, history, playlist
 from app.routers.video import get_whisper_service
 
 # Configure logging
@@ -61,6 +61,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(video.router)
 app.include_router(history.router)
+app.include_router(playlist.router)
 
 
 def print_access_info():

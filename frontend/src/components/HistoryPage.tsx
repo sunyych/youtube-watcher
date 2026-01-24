@@ -10,9 +10,12 @@ import {
   faDownload, 
   faRedo, 
   faTrash, 
-  faSync
+  faSync,
+  faPlay,
+  faPlus
 } from '@fortawesome/free-solid-svg-icons'
-import { historyApi, videoApi, HistoryItem, HistoryDetail } from '../services/api'
+import { historyApi, videoApi, HistoryItem, HistoryDetail, playlistApi } from '../services/api'
+import { useNavigate } from 'react-router-dom'
 import LanguageSelector from './LanguageSelector'
 import './HistoryPage.css'
 
@@ -22,6 +25,7 @@ interface HistoryPageProps {
 
 const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [expandedDetail, setExpandedDetail] = useState<HistoryDetail | null>(null)
@@ -38,6 +42,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
   const [reprocessingId, setReprocessingId] = useState<number | null>(null)
   const [reprocessDialogOpen, setReprocessDialogOpen] = useState<number | null>(null)
   const [reprocessLanguage, setReprocessLanguage] = useState<string>('')
+  const [addingToPlaylist, setAddingToPlaylist] = useState<number | null>(null)
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -298,6 +303,23 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     setReprocessLanguage('')
   }
 
+  const handlePlay = (id: number) => {
+    navigate(`/player/${id}?from=history`)
+  }
+
+  const handleAddToPlaylist = async (id: number) => {
+    setAddingToPlaylist(id)
+    try {
+      await playlistApi.addItem(id)
+      alert(t('history.item.addedToPlaylist'))
+    } catch (err: any) {
+      console.error('Failed to add to playlist:', err)
+      alert(err.response?.data?.detail || t('history.item.addToPlaylistFailed'))
+    } finally {
+      setAddingToPlaylist(null)
+    }
+  }
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     const language = localStorage.getItem('language') || 'en'
@@ -386,6 +408,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
         <nav>
           <span className="username">{localStorage.getItem('username') || t('app.user')}</span>
           <Link to="/">{t('history.nav.home')}</Link>
+          <Link to="/history">{t('history.title')}</Link>
+          <Link to="/playlist">{t('history.nav.playlist')}</Link>
           <Link to="/settings">{t('history.nav.settings')}</Link>
           <button onClick={onLogout}>{t('history.nav.logout')}</button>
         </nav>
@@ -470,6 +494,21 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
                     )}
                     {item.status === 'completed' && (
                       <>
+                        <button
+                          className="play-button"
+                          onClick={() => handlePlay(item.id)}
+                          title={t('history.item.play')}
+                        >
+                          <FontAwesomeIcon icon={faPlay} />
+                        </button>
+                        <button
+                          className="add-to-playlist-button"
+                          onClick={() => handleAddToPlaylist(item.id)}
+                          disabled={addingToPlaylist === item.id}
+                          title={addingToPlaylist === item.id ? t('history.item.addingToPlaylist') : t('history.item.addToPlaylist')}
+                        >
+                          <FontAwesomeIcon icon={faPlus} spin={addingToPlaylist === item.id} />
+                        </button>
                         <button
                           className="export-button"
                           onClick={() => handleExport(item.id, item.title)}

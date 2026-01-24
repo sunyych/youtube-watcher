@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.database import init_db, SessionLocal
-from app.models.database import VideoRecord, VideoStatus
+from app.models.database import VideoRecord, VideoStatus, PlaylistItem
 from app.config import settings
 from app.services.video_downloader import VideoDownloader
 from app.services.audio_converter import AudioConverter
@@ -168,6 +168,19 @@ async def process_video_task(record_id: int):
                     record.title = video_info['title']
                     record.progress = 25.0
                     db.commit()
+        
+        # Check if video is in playlist - if so, skip transcript processing
+        is_in_playlist = db.query(PlaylistItem).filter(
+            PlaylistItem.video_record_id == record_id
+        ).first() is not None
+        
+        if is_in_playlist:
+            logger.info(f"Video {record_id} is in playlist, skipping transcript processing")
+            record.status = VideoStatus.COMPLETED
+            record.progress = 100.0
+            record.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return
         
         # Step 2: Convert to audio (if not already done)
         if record.status in [VideoStatus.DOWNLOADING, VideoStatus.CONVERTING]:

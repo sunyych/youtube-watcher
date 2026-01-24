@@ -1,5 +1,6 @@
 """Video processing routes"""
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
@@ -7,6 +8,8 @@ from pathlib import Path
 import json
 import asyncio
 import logging
+import re
+import os
 
 from app.database import get_db, init_db
 from app.models.database import VideoRecord, VideoStatus, User
@@ -131,6 +134,8 @@ async def process_video(
     ).count()
     record.queue_position = pending_count + 1
     db.commit()
+    
+    # Note: Tags will be extracted from title when video is downloaded and added to playlist
     
     return VideoStatusResponse(
         id=record.id,
@@ -293,3 +298,160 @@ async def websocket_progress(websocket: WebSocket, record_id: int):
         await websocket.send_json({"error": str(e)})
     finally:
         db.close()
+
+
+def extract_video_id(url: str) -> Optional[str]:
+    """Extract YouTube video ID from URL"""
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
+        r'youtube\.com/watch\?.*v=([a-zA-Z0-9_-]{11})'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+async def get_current_user_optional(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Get current user from token in header or query parameter"""
+    from fastapi.security import HTTPAuthorizationCredentials
+    from jose import JWTError, jwt
+    from app.config import settings
+    
+    # Try to get token from Authorization header
+    auth_header = request.headers.get("Authorization")
+    token = None
+    
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        logger.debug(f"Got token from Authorization header")
+    else:
+        # Try to get token from query parameter
+        token = request.query_params.get("token")
+        if token:
+            logger.debug(f"Got token from query parameter")
+    
+    if not token:
+        logger.warning(f"No token found in request. Headers: {dict(request.headers)}, Query: {dict(request.query_params)}")
+        return None
+    
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            logger.warning("Token payload missing 'sub' field")
+            return None
+        
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user:
+            logger.warning(f"User {user_id} not found in database")
+        return user
+    except (JWTError, ValueError, TypeError) as e:
+        logger.warning(f"Token validation failed: {e}")
+        return None
+
+
+@router.get("/{record_id}/stream")
+async def stream_video(
+    record_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Stream video file with Range request support (no authentication required for local access)"""
+    # Get video record (no user check for local access)
+    record = db.query(VideoRecord).filter(
+        VideoRecord.id == record_id
+    ).first()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Extract video ID from URL
+    video_id = extract_video_id(record.url)
+    if not video_id:
+        raise HTTPException(status_code=404, detail="Could not extract video ID from URL")
+    
+    # Find video file
+    video_extensions = ['.mp4', '.webm', '.mkv']
+    video_path = None
+    
+    for ext in video_extensions:
+        potential_path = Path(settings.video_storage_dir) / f"{video_id}{ext}"
+        if potential_path.exists():
+            video_path = potential_path
+            break
+    
+    if not video_path:
+        # Try to find any file with the video ID
+        for file in Path(settings.video_storage_dir).glob(f"{video_id}.*"):
+            if file.suffix in video_extensions:
+                video_path = file
+                break
+    
+    if not video_path or not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    # Get file size
+    file_size = video_path.stat().st_size
+    
+    # Handle Range requests for video seeking
+    range_header = request.headers.get('range')
+    
+    if range_header:
+        # Parse range header
+        range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+        if range_match:
+            start = int(range_match.group(1))
+            end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+            
+            # Validate range
+            if start >= file_size or end >= file_size or start > end:
+                return Response(
+                    status_code=416,
+                    headers={"Content-Range": f"bytes */{file_size}"}
+                )
+            
+            # Read chunk
+            chunk_size = end - start + 1
+            with open(video_path, 'rb') as f:
+                f.seek(start)
+                chunk = f.read(chunk_size)
+            
+            # Determine content type
+            content_type = "video/mp4"
+            if video_path.suffix == '.webm':
+                content_type = "video/webm"
+            elif video_path.suffix == '.mkv':
+                content_type = "video/x-matroska"
+            
+            return Response(
+                content=chunk,
+                status_code=206,
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(chunk_size),
+                    "Content-Type": content_type,
+                },
+                media_type=content_type
+            )
+    
+    # Return full file if no range request
+    content_type = "video/mp4"
+    if video_path.suffix == '.webm':
+        content_type = "video/webm"
+    elif video_path.suffix == '.mkv':
+        content_type = "video/x-matroska"
+    
+    return FileResponse(
+        path=str(video_path),
+        media_type=content_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+        }
+    )
