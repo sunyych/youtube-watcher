@@ -1,56 +1,8 @@
 .settings-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
   background: #f5f5f5;
-}
-
-.settings-header {
-  background: white;
-  padding: 1rem 2rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.settings-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: #333;
-}
-
-.settings-header nav {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-}
-
-.settings-header nav .username {
-  color: #667eea;
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-}
-
-.settings-header nav a {
-  color: #667eea;
-  text-decoration: none;
-  padding: 0.5rem 1rem;
-  border-radius: 5px;
-  transition: background 0.3s;
-}
-
-.settings-header nav a:hover {
-  background: #f0f0f0;
-}
-
-.settings-header button {
-  padding: 0.5rem 1rem;
-  background: #e74c3c;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
 }
 
 .settings-content {

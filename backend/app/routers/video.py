@@ -355,6 +355,35 @@ async def get_current_user_optional(
         return None
 
 
+@router.get("/{record_id}/thumbnail")
+async def get_video_thumbnail(
+    record_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Get video thumbnail image"""
+    record = db.query(VideoRecord).filter(
+        VideoRecord.id == record_id,
+        VideoRecord.user_id == user.id
+    ).first()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    if not record.thumbnail_path:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    
+    thumbnail_path = Path(record.thumbnail_path)
+    if not thumbnail_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail file not found")
+    
+    return FileResponse(
+        str(thumbnail_path),
+        media_type="image/jpeg",
+        filename=f"thumbnail_{record_id}.jpg"
+    )
+
+
 @router.get("/{record_id}/stream")
 async def stream_video(
     record_id: int,

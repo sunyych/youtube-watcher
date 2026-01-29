@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # JWT
     secret_key: str = "your-secret-key-change-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24  # 24 hours
+    access_token_expire_minutes: int = 60 * 24 * 365  # 1 year
     
     @property
     def database_url(self) -> str:

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { videoApi, historyApi, QueueStatus, playlistApi } from '../services/api'
+import Header from './Header'
 import LanguageSelector from './LanguageSelector'
 import ProgressBar from './ProgressBar'
 import QueueDisplay from './QueueDisplay'
@@ -148,18 +148,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
   }
 
   return (
-    <div className="chat-interface">
-      <header className="chat-header">
-        <h1>{t('chat.header.title')}</h1>
-        <nav>
-          <span className="username">{localStorage.getItem('username') || t('app.user')}</span>
-          <Link to="/">{t('history.nav.home')}</Link>
-          <Link to="/history">{t('history.title')}</Link>
-          <Link to="/playlist">{t('history.nav.playlist')}</Link>
-          <Link to="/settings">{t('history.nav.settings')}</Link>
-          <button onClick={onLogout}>{t('history.nav.logout')}</button>
-        </nav>
-      </header>
+    <div className="chat-interface page-with-header">
+      <Header title={t('chat.header.title')} onLogout={onLogout} />
 
       <div className="chat-content">
         {queueStatus && <QueueDisplay queueStatus={queueStatus} />}

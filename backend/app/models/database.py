@@ -51,6 +51,8 @@ class VideoRecord(Base):
     progress = Column(Float, default=0.0, nullable=False)  # 0-100
     queue_position = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
+    upload_date = Column(DateTime(timezone=True), nullable=True)  # Video upload date from YouTube
+    thumbnail_path = Column(String, nullable=True)  # Path to thumbnail image
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)

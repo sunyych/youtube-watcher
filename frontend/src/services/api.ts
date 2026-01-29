@@ -19,6 +19,25 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Handle 401 errors - automatically logout and redirect to login
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Session expired or unauthorized - clear token and redirect to login
+      localStorage.removeItem('token')
+      localStorage.removeItem('username')
+      localStorage.removeItem('user_id')
+      
+      // Only redirect if we're not already on the login page
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
 export interface LoginRequest {
   username: string
   password: string
@@ -59,6 +78,8 @@ export interface HistoryItem {
   language?: string
   status: string
   keywords?: string  // Comma-separated keywords
+  upload_date?: string  // Video upload date from YouTube
+  thumbnail_path?: string  // Path to thumbnail image
   created_at: string
 }
 
@@ -152,18 +173,30 @@ export const videoApi = {
     // No authentication required for local access
     return `/api/video/${recordId}/stream`
   },
+  
+  getThumbnailUrl: (recordId: number): string => {
+    // Use relative URL since nginx proxies /api to backend
+    return `/api/video/${recordId}/thumbnail`
+  },
 }
 
 export const historyApi = {
-  getHistory: async (skip = 0, limit = 100): Promise<HistoryItem[]> => {
+  getHistory: async (skip = 0, limit = 100, hasSummary?: boolean): Promise<HistoryItem[]> => {
+    const params: Record<string, any> = { skip, limit }
+    if (typeof hasSummary === 'boolean') {
+      params.has_summary = hasSummary
+    }
+
     const response = await api.get<HistoryItem[]>('/api/history', {
-      params: { skip, limit },
+      params,
     })
     return response.data
   },
   
-  getHistoryCount: async (): Promise<number> => {
-    const response = await api.get<{ count: number }>('/api/history/count')
+  getHistoryCount: async (hasSummary?: boolean): Promise<number> => {
+    const response = await api.get<{ count: number }>('/api/history/count', {
+      params: typeof hasSummary === 'boolean' ? { has_summary: hasSummary } : undefined,
+    })
     return response.data.count
   },
   
@@ -177,16 +210,21 @@ export const historyApi = {
     return response.data
   },
   
-  searchHistory: async (query: string, skip = 0, limit = 100): Promise<HistoryItem[]> => {
+  searchHistory: async (query: string, skip = 0, limit = 100, hasSummary?: boolean): Promise<HistoryItem[]> => {
+    const params: Record<string, any> = { q: query, skip, limit }
+    if (typeof hasSummary === 'boolean') {
+      params.has_summary = hasSummary
+    }
+
     const response = await api.get<HistoryItem[]>('/api/history/search', {
-      params: { q: query, skip, limit },
+      params,
     })
     return response.data
   },
   
-  searchHistoryCount: async (query: string): Promise<number> => {
+  searchHistoryCount: async (query: string, hasSummary?: boolean): Promise<number> => {
     const response = await api.get<{ count: number }>('/api/history/search/count', {
-      params: { q: query },
+      params: typeof hasSummary === 'boolean' ? { q: query, has_summary: hasSummary } : { q: query },
     })
     return response.data.count
   },
@@ -238,20 +276,47 @@ export interface UpdatePlaylistItemRequest {
 }
 
 export const playlistApi = {
+  getPlaylists: async (): Promise<PlaylistResponse[]> => {
+    const response = await api.get<PlaylistResponse[]>('/api/playlist/list')
+    return response.data
+  },
+  
   getPlaylist: async (): Promise<PlaylistResponse> => {
     const response = await api.get<PlaylistResponse>('/api/playlist')
     return response.data
   },
   
-  getPlaylistItems: async (): Promise<PlaylistItemResponse[]> => {
-    const response = await api.get<PlaylistItemResponse[]>('/api/playlist/items')
+  createPlaylist: async (name: string): Promise<PlaylistResponse> => {
+    const response = await api.post<PlaylistResponse>('/api/playlist', { name })
     return response.data
   },
   
-  addItem: async (videoRecordId: number): Promise<PlaylistItemResponse> => {
-    const response = await api.post<PlaylistItemResponse>('/api/playlist/items', {
-      video_record_id: videoRecordId
+  updatePlaylist: async (playlistId: number, name: string): Promise<PlaylistResponse> => {
+    const response = await api.put<PlaylistResponse>(`/api/playlist/${playlistId}`, { name })
+    return response.data
+  },
+  
+  deletePlaylist: async (playlistId: number): Promise<void> => {
+    await api.delete(`/api/playlist/${playlistId}`)
+  },
+  
+  getPlaylistItems: async (playlistId?: number): Promise<PlaylistItemResponse[]> => {
+    const response = await api.get<PlaylistItemResponse[]>('/api/playlist/items', {
+      params: playlistId ? { playlist_id: playlistId } : undefined,
     })
+    return response.data
+  },
+  
+  addItem: async (videoRecordId: number, playlistId?: number): Promise<PlaylistItemResponse> => {
+    const response = await api.post<PlaylistItemResponse>(
+      '/api/playlist/items',
+      {
+        video_record_id: videoRecordId,
+      },
+      {
+        params: playlistId ? { playlist_id: playlistId } : undefined,
+      }
+    )
     return response.data
   },
   
@@ -266,8 +331,10 @@ export const playlistApi = {
     await api.delete(`/api/playlist/items/${itemId}`)
   },
   
-  clearPlaylist: async (): Promise<void> => {
-    await api.delete('/api/playlist/items')
+  clearPlaylist: async (playlistId?: number): Promise<void> => {
+    await api.delete('/api/playlist/items', {
+      params: playlistId ? { playlist_id: playlistId } : undefined,
+    })
   },
 }
 

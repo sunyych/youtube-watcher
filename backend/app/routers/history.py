@@ -29,6 +29,8 @@ class HistoryItem(BaseModel):
     language: Optional[str]
     status: str
     keywords: Optional[str]  # Comma-separated keywords
+    upload_date: Optional[datetime]  # Video upload date from YouTube
+    thumbnail_path: Optional[str]  # Path to thumbnail image
     created_at: datetime
     
     class Config:
@@ -47,25 +49,43 @@ class HistoryDetail(HistoryItem):
 async def get_history(
     skip: int = 0,
     limit: int = 100,
+    has_summary: Optional[bool] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     """Get video history"""
-    records = db.query(VideoRecord).filter(
+    query = db.query(VideoRecord).filter(
         VideoRecord.user_id == user.id
-    ).order_by(desc(VideoRecord.created_at)).offset(skip).limit(limit).all()
+    )
+
+    # Filter by whether the record has a summary, if requested
+    if has_summary is True:
+        query = query.filter(VideoRecord.summary.isnot(None))
+    elif has_summary is False:
+        query = query.filter(VideoRecord.summary.is_(None))
+
+    records = query.order_by(desc(VideoRecord.created_at)).offset(skip).limit(limit).all()
     return records
 
 
 @router.get("/count")
 async def get_history_count(
+    has_summary: Optional[bool] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     """Get total count of video history"""
-    count = db.query(VideoRecord).filter(
+    query = db.query(VideoRecord).filter(
         VideoRecord.user_id == user.id
-    ).count()
+    )
+
+    # Apply same summary filter as in get_history
+    if has_summary is True:
+        query = query.filter(VideoRecord.summary.isnot(None))
+    elif has_summary is False:
+        query = query.filter(VideoRecord.summary.is_(None))
+
+    count = query.count()
     return {"count": count}
 
 
@@ -74,6 +94,7 @@ async def search_history(
     q: str = Query(..., description="Search query"),
     skip: int = 0,
     limit: int = 100,
+    has_summary: Optional[bool] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -86,7 +107,7 @@ async def search_history(
     
     # Search in title, URL, keywords, and transcript (only for this user)
     # Handle NULL values properly - ilike on NULL returns NULL, so we need to handle it
-    records = db.query(VideoRecord).filter(
+    query = db.query(VideoRecord).filter(
         VideoRecord.user_id == user.id,
         or_(
             and_(VideoRecord.title.isnot(None), VideoRecord.title.ilike(search_term)),
@@ -94,7 +115,15 @@ async def search_history(
             and_(VideoRecord.keywords.isnot(None), VideoRecord.keywords.ilike(search_term)),
             and_(VideoRecord.transcript.isnot(None), VideoRecord.transcript.ilike(search_term))
         )
-    ).order_by(desc(VideoRecord.updated_at)).offset(skip).limit(limit).all()
+    )
+
+    # Optional filter by whether summary exists
+    if has_summary is True:
+        query = query.filter(VideoRecord.summary.isnot(None))
+    elif has_summary is False:
+        query = query.filter(VideoRecord.summary.is_(None))
+
+    records = query.order_by(desc(VideoRecord.updated_at)).offset(skip).limit(limit).all()
     
     return records
 
@@ -102,6 +131,7 @@ async def search_history(
 @router.get("/search/count")
 async def search_history_count(
     q: str = Query(..., description="Search query"),
+    has_summary: Optional[bool] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -111,7 +141,7 @@ async def search_history_count(
     
     search_term = f"%{q.strip()}%"
     
-    count = db.query(VideoRecord).filter(
+    query = db.query(VideoRecord).filter(
         VideoRecord.user_id == user.id,
         or_(
             and_(VideoRecord.title.isnot(None), VideoRecord.title.ilike(search_term)),
@@ -119,7 +149,15 @@ async def search_history_count(
             and_(VideoRecord.keywords.isnot(None), VideoRecord.keywords.ilike(search_term)),
             and_(VideoRecord.transcript.isnot(None), VideoRecord.transcript.ilike(search_term))
         )
-    ).count()
+    )
+
+    # Optional filter by whether summary exists
+    if has_summary is True:
+        query = query.filter(VideoRecord.summary.isnot(None))
+    elif has_summary is False:
+        query = query.filter(VideoRecord.summary.is_(None))
+
+    count = query.count()
     
     return {"count": count}
 

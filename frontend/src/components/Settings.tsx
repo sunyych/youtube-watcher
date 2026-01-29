@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n/config'
+import Header from './Header'
 import './Settings.css'
 
 interface SettingsProps {
@@ -17,18 +17,8 @@ const Settings: React.FC<SettingsProps> = ({ onLogout }) => {
   }
 
   return (
-    <div className="settings-page">
-      <header className="settings-header">
-        <h1>{t('settings.title')}</h1>
-        <nav>
-          <span className="username">{localStorage.getItem('username') || t('app.user')}</span>
-          <Link to="/">{t('history.nav.home')}</Link>
-          <Link to="/history">{t('history.title')}</Link>
-          <Link to="/playlist">{t('history.nav.playlist')}</Link>
-          <Link to="/settings">{t('history.nav.settings')}</Link>
-          <button onClick={onLogout}>{t('history.nav.logout')}</button>
-        </nav>
-      </header>
+    <div className="settings-page page-with-header">
+      <Header title={t('settings.title')} onLogout={onLogout} />
 
       <div className="settings-content">
         <div className="settings-section">

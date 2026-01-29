@@ -54,9 +54,13 @@ def get_db():
 
 
 def init_db():
-    """Initialize database tables and create default user"""
+    """Initialize database tables, run migrations, and create default user"""
+    # Create tables that don't exist yet (no-op for existing tables)
     Base.metadata.create_all(bind=engine)
-    
+    # Run migrations to add missing columns / tables on existing DBs
+    from app.migrations.runner import run_migrations
+    run_migrations(engine)
+
     # Create default user if it doesn't exist
     db = SessionLocal()
     try:

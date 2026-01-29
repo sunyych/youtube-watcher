@@ -17,6 +17,7 @@ from app.services.video_downloader import VideoDownloader
 from app.services.audio_converter import AudioConverter
 from app.services.whisper_service import WhisperService
 from app.services.llm_service import LLMService
+from app.services.thumbnail_generator import ThumbnailGenerator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ async def process_video_task(record_id: int):
         audio_converter = AudioConverter(settings.video_storage_dir)
         whisper_service = get_whisper_service()
         llm_service = LLMService()
+        thumbnail_generator = ThumbnailGenerator(settings.video_storage_dir)
         
         # Determine where to resume processing based on current status
         video_info = None
@@ -120,8 +122,31 @@ async def process_video_task(record_id: int):
             
             video_info = video_downloader.download(str(record.url), progress_callback=download_progress)
             record.title = video_info['title']
+            # Save upload date if available
+            if 'upload_date' in video_info and video_info['upload_date']:
+                from datetime import timezone
+                upload_date = video_info['upload_date']
+                # Make timezone-aware if not already
+                if upload_date.tzinfo is None:
+                    upload_date = upload_date.replace(tzinfo=timezone.utc)
+                record.upload_date = upload_date
             record.progress = 25.0
             db.commit()
+            
+            # Generate thumbnail
+            try:
+                video_id = extract_video_id(record.url)
+                if video_id and video_info.get('file_path'):
+                    thumbnail_path = thumbnail_generator.generate_thumbnail(
+                        video_info['file_path'],
+                        video_id
+                    )
+                    if thumbnail_path:
+                        record.thumbnail_path = thumbnail_path
+                        db.commit()
+                        logger.info(f"Generated thumbnail for record {record_id}: {thumbnail_path}")
+            except Exception as e:
+                logger.warning(f"Failed to generate thumbnail for record {record_id}: {e}")
         else:
             # Try to find existing video file
             video_id = extract_video_id(record.url)
@@ -137,8 +162,31 @@ async def process_video_task(record_id: int):
                 
                 video_info = video_downloader.download(str(record.url), progress_callback=download_progress)
                 record.title = video_info['title']
+                # Save upload date if available
+                if 'upload_date' in video_info and video_info['upload_date']:
+                    from datetime import timezone
+                    upload_date = video_info['upload_date']
+                    # Make timezone-aware if not already
+                    if upload_date.tzinfo is None:
+                        upload_date = upload_date.replace(tzinfo=timezone.utc)
+                    record.upload_date = upload_date
                 record.progress = 25.0
                 db.commit()
+                
+                # Generate thumbnail
+                try:
+                    video_id = extract_video_id(record.url)
+                    if video_id and video_info.get('file_path'):
+                        thumbnail_path = thumbnail_generator.generate_thumbnail(
+                            video_info['file_path'],
+                            video_id
+                        )
+                        if thumbnail_path:
+                            record.thumbnail_path = thumbnail_path
+                            db.commit()
+                            logger.info(f"Generated thumbnail for record {record_id}: {thumbnail_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to generate thumbnail for record {record_id}: {e}")
             else:
                 video_path = Path(settings.video_storage_dir) / f"{video_id}.mp4"
                 if not video_path.exists():

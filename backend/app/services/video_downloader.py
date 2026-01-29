@@ -82,6 +82,27 @@ class VideoDownloader:
                         video_file = file
                         break
                 
+                # Extract upload date
+                upload_date = None
+                if 'upload_date' in info:
+                    # yt-dlp returns upload_date as YYYYMMDD string
+                    upload_date_str = info.get('upload_date')
+                    if upload_date_str:
+                        try:
+                            from datetime import datetime
+                            upload_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not parse upload_date: {upload_date_str}")
+                elif 'release_date' in info:
+                    # Fallback to release_date
+                    release_date_str = info.get('release_date')
+                    if release_date_str:
+                        try:
+                            from datetime import datetime
+                            upload_date = datetime.strptime(release_date_str, '%Y%m%d')
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not parse release_date: {release_date_str}")
+                
                 return {
                     'id': video_id,
                     'title': info.get('title', 'Unknown'),
@@ -89,6 +110,7 @@ class VideoDownloader:
                     'file_path': str(video_file),
                     'thumbnail': info.get('thumbnail'),
                     'description': info.get('description', ''),
+                    'upload_date': upload_date,
                 }
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
