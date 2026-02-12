@@ -1,5 +1,5 @@
 """Database models"""
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Enum as SQLEnum, ForeignKey
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Float, Enum as SQLEnum, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -28,6 +28,8 @@ class User(Base):
     username = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Preferred language for generated summaries (e.g. 中文, English). Default 中文.
+    summary_language = Column(String, nullable=True, default="中文")
     
     # Relationships
     video_records = relationship("VideoRecord", back_populates="user")
@@ -53,12 +55,28 @@ class VideoRecord(Base):
     error_message = Column(Text, nullable=True)
     upload_date = Column(DateTime(timezone=True), nullable=True)  # Video upload date from YouTube
     thumbnail_path = Column(String, nullable=True)  # Path to thumbnail image
+    thumbnail_url = Column(Text, nullable=True)  # Remote thumbnail URL (from provider)
+    source_video_id = Column(String, nullable=True, index=True)  # e.g. YouTube video id
+    channel_id = Column(String, nullable=True)
+    channel_title = Column(String, nullable=True, index=True)  # Publisher / channel name
+    uploader_id = Column(String, nullable=True)
+    uploader = Column(String, nullable=True)
+    view_count = Column(BigInteger, default=0, nullable=False)
+    like_count = Column(BigInteger, default=0, nullable=False)
+    duration_seconds = Column(Integer, default=0, nullable=False)
+    downloaded_at = Column(DateTime(timezone=True), nullable=True)
+    read_count = Column(Integer, default=0, nullable=False)  # How many times the detail was opened
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="video_records")
+
+    def bump_read_count(self) -> int:
+        """Increment read_count for this record (in-memory)."""
+        self.read_count = int(self.read_count or 0) + 1
+        return int(self.read_count or 0)
 
 
 class Playlist(Base):

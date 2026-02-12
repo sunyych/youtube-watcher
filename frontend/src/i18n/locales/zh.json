@@ -50,6 +50,7 @@
     "title": "历史记录",
     "nav": {
       "home": "主页",
+      "tasks": "处理状态",
       "playlist": "播放列表",
       "settings": "设置",
       "logout": "退出"
@@ -73,7 +74,27 @@
       "noTranscript": "无转录/无总结",
       "withSummary": "有总结"
     },
+    "view": {
+      "label": "显示",
+      "compact": "精简",
+      "standard": "标准"
+    },
+    "sort": {
+      "label": "排序",
+      "dateDesc": "按发布时间（新→旧）",
+      "dateAsc": "按发布时间（旧→新）",
+      "readDesc": "按阅读次数（高→低）",
+      "titleAsc": "按标题（A→Z）"
+    },
+    "filter": {
+      "unreadOnly": "只显示未读"
+    },
     "item": {
+      "close": "关闭",
+      "readCount": "阅读 {{count}}",
+      "readCountTitle": "阅读次数",
+      "previous": "上一篇",
+      "next": "下一篇",
       "keywords": "关键词:",
       "noKeywords": "暂无关键词",
       "summary": "总结:",
@@ -147,6 +168,19 @@
     "deletePlaylistConfirmNoName": "确定要删除此播放列表吗？此操作会删除该列表中的所有视频。",
     "deleteSuccess": "播放列表删除成功",
     "deleteFailed": "播放列表删除失败",
+    "openPlayer": "打开播放页",
+    "openReading": "打开阅读列表",
+    "reading": {
+      "title": "阅读",
+      "list": "阅读列表",
+      "noKeywords": "暂无关键词",
+      "noSummary": "暂无总结",
+      "openDetail": "详细内容"
+    },
+    "backToPlaylist": "返回播放列表",
+    "playlist": "播放列表",
+    "hidePlaylist": "隐藏播放列表",
+    "showPlaylist": "显示播放列表",
     "play": "播放",
     "remove": "移除",
     "removeConfirm": "确定要从播放列表移除此视频吗？",
@@ -167,6 +201,11 @@
     "selectAll": "全选",
     "deselectAll": "取消全选",
     "selectedCount": "已选择 {{count}} 个",
+    "searchPlaceholder": "搜索标题/URL/关键词...",
+    "clearSearch": "清除",
+    "noSearchResults": "没有匹配的视频",
+    "unassigned": "未加入任何播放列表",
+    "unassignedHint": "显示未加入任何播放列表的视频",
     "addSelected": "添加选中 ({{count}})",
     "noVideosSelected": "请先选择视频",
     "addSelectedSuccess": "成功添加 {{count}} 个视频",
@@ -182,6 +221,11 @@
     "videoNotReady": "视频尚未准备好",
     "loadFailed": "加载视频失败",
     "goBack": "返回",
+    "play": "播放",
+    "pause": "暂停",
+    "seek": "进度",
+    "fullscreen": "全屏",
+    "exitFullscreen": "退出全屏",
     "previous": "上一个",
     "next": "下一个"
   },
@@ -190,7 +234,13 @@
     "nav": {
       "home": "主页",
       "history": "历史记录",
+      "tasks": "处理状态",
       "logout": "退出"
+    },
+    "extension": {
+      "title": "Chrome 扩展",
+      "note": "点击下面链接下载扩展安装包（.crx）。",
+      "download": "下载 chrome-extension.crx"
     },
     "password": {
       "title": "密码设置",
@@ -214,6 +264,19 @@
       "description": "选择您的首选语言",
       "english": "English",
       "chinese": "中文"
+    },
+    "theme": {
+      "title": "外观",
+      "description": "选择浅色或深色主题",
+      "dark": "深色主题"
+    },
+    "summaryLanguage": {
+      "title": "总结语言",
+      "description": "视频总结将以此语言生成。默认为中文。",
+      "chinese": "中文",
+      "english": "English",
+      "saving": "保存中...",
+      "saved": "已保存"
     }
   },
   "queue": {

@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Header from './Header'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { 
+import {
   faPlay, 
   faTrash, 
   faBroom,
@@ -11,6 +11,7 @@ import {
   faEdit,
   faFolder,
   faFolderOpen,
+  faBookOpen,
   faGripVertical
 } from '@fortawesome/free-solid-svg-icons'
 import { playlistApi, PlaylistItemResponse, PlaylistResponse, historyApi, HistoryItem } from '../services/api'
@@ -20,9 +21,13 @@ interface PlaylistPageProps {
   onLogout: () => void
 }
 
+const PLAYABLE_STATUSES = new Set(['converting', 'transcribing', 'summarizing', 'completed'])
+const isPlayableStatus = (status?: string) => !!status && PLAYABLE_STATUSES.has(status)
+
 const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const UNASSIGNED_PLAYLIST_ID = -1
   const [playlists, setPlaylists] = useState<PlaylistResponse[]>([])
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null)
   const [items, setItems] = useState<PlaylistItemResponse[]>([])
@@ -37,6 +42,9 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
   const [dragOverPlaylistId, setDragOverPlaylistId] = useState<number | null>(null)
   const [draggedItemId, setDraggedItemId] = useState<number | null>(null)
   const [dragOverItemIndex, setDragOverItemIndex] = useState<number | null>(null)
+  const [videoSearch, setVideoSearch] = useState('')
+  const [assignedVideoIds, setAssignedVideoIds] = useState<Set<number>>(new Set())
+  const [loadingAssigned, setLoadingAssigned] = useState(false)
 
   useEffect(() => {
     loadPlaylists(true)
@@ -44,6 +52,11 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
   }, [])
 
   useEffect(() => {
+    if (selectedPlaylistId === UNASSIGNED_PLAYLIST_ID) {
+      setItems([])
+      setLoadingItems(false)
+      return
+    }
     if (selectedPlaylistId !== null) {
       loadPlaylistItems(selectedPlaylistId)
     } else {
@@ -52,11 +65,34 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     }
   }, [selectedPlaylistId])
 
+  const refreshAssignedVideoIds = async (pls?: PlaylistResponse[]) => {
+    const list = pls ?? playlists
+    if (!list || list.length === 0) {
+      setAssignedVideoIds(new Set())
+      return
+    }
+
+    setLoadingAssigned(true)
+    try {
+      const results = await Promise.allSettled(list.map((p) => playlistApi.getPlaylistItems(p.id)))
+      const next = new Set<number>()
+      for (const r of results) {
+        if (r.status !== 'fulfilled') continue
+        for (const it of r.value) next.add(it.video_record_id)
+      }
+      setAssignedVideoIds(next)
+    } finally {
+      setLoadingAssigned(false)
+    }
+  }
+
   const loadPlaylists = async (selectFirstIfNeeded: boolean = false) => {
     setLoadingPlaylists(true)
     try {
       const data = await playlistApi.getPlaylists()
       setPlaylists(data)
+      // Recompute "in any playlist" set
+      refreshAssignedVideoIds(data)
 
       if (data.length === 0) {
         setSelectedPlaylistId(null)
@@ -109,6 +145,16 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     navigate(`/player/${videoRecordId}?from=playlist`)
   }
 
+  const handleOpenPlaylistPlayer = () => {
+    if (selectedPlaylistId === null || selectedPlaylistId === UNASSIGNED_PLAYLIST_ID) return
+    navigate(`/playlist/${selectedPlaylistId}/play`)
+  }
+
+  const handleOpenReadingList = () => {
+    if (selectedPlaylistId === null || selectedPlaylistId === UNASSIGNED_PLAYLIST_ID) return
+    navigate(`/playlist/${selectedPlaylistId}/read`)
+  }
+
 
   const handleRemove = async (itemId: number) => {
     if (!window.confirm(t('playlist.removeConfirm'))) {
@@ -121,6 +167,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
       if (selectedPlaylistId !== null) {
         await loadPlaylistItems(selectedPlaylistId)
       }
+      refreshAssignedVideoIds()
     } catch (err) {
       console.error('Failed to remove item:', err)
       alert(t('playlist.removeFailed'))
@@ -142,6 +189,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     try {
       await playlistApi.clearPlaylist(selectedPlaylistId)
       await loadPlaylistItems(selectedPlaylistId)
+      refreshAssignedVideoIds()
       alert(t('playlist.clearSuccess'))
     } catch (err) {
       console.error('Failed to clear playlist:', err)
@@ -205,6 +253,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     try {
       await playlistApi.deletePlaylist(playlistId)
       await loadPlaylists(true)
+      refreshAssignedVideoIds()
       alert(t('playlist.deleteSuccess'))
     } catch (err) {
       console.error('Failed to delete playlist:', err)
@@ -226,12 +275,42 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     })
   }
 
+  const unassignedVideos = useMemo(() => {
+    if (!videos.length) return []
+    return videos.filter((v) => !assignedVideoIds.has(v.id))
+  }, [videos, assignedVideoIds])
+
+  const sourceVideos = useMemo(() => {
+    return selectedPlaylistId === UNASSIGNED_PLAYLIST_ID ? unassignedVideos : videos
+  }, [selectedPlaylistId, unassignedVideos, videos])
+
+  const filteredSourceVideos = useMemo(() => {
+    const q = videoSearch.trim().toLowerCase()
+    if (!q) return sourceVideos
+    return sourceVideos.filter((v) => {
+      const title = (v.title || '').toLowerCase()
+      const url = (v.url || '').toLowerCase()
+      const keywords = (v.keywords || '').toLowerCase()
+      return title.includes(q) || url.includes(q) || keywords.includes(q)
+    })
+  }, [sourceVideos, videoSearch])
+
   const handleSelectAll = () => {
-    if (selectedVideoIds.size === videos.length) {
-      setSelectedVideoIds(new Set())
-    } else {
-      setSelectedVideoIds(new Set(videos.map(v => v.id)))
-    }
+    const visibleIds = filteredSourceVideos.map((v) => v.id)
+    if (visibleIds.length === 0) return
+
+    const allVisibleSelected = visibleIds.every((id) => selectedVideoIds.has(id))
+    setSelectedVideoIds((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        // Deselect only visible results; keep other selections
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        // Select all visible results
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
   }
 
 
@@ -301,6 +380,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
       if (selectedPlaylistId === playlistId) {
         await loadPlaylistItems(playlistId)
       }
+      refreshAssignedVideoIds()
       setSelectedVideoIds(new Set())
       if (failCount === 0) {
         alert(t('playlist.addSelectedSuccess', { count: successCount }))
@@ -367,8 +447,32 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
       <Header title={t('playlist.title')} onLogout={onLogout} />
 
       <div className="playlist-layout">
-        {/* Left sidebar: Playlist tree */}
+        {/* Left sidebar: Reading list + Playlist tree */}
         <div className="playlist-sidebar">
+          {/* Reading list section - above playlists */}
+          <div className="reading-list-section">
+            <div className="reading-list-section-header">
+              <FontAwesomeIcon icon={faBookOpen} className="reading-list-section-icon" />
+              <span className="reading-list-section-title">{t('playlist.reading.list', '阅读列表')}</span>
+            </div>
+            <button
+              type="button"
+              className="reading-list-open-button"
+              onClick={handleOpenReadingList}
+              disabled={
+                selectedPlaylistId === null ||
+                selectedPlaylistId === UNASSIGNED_PLAYLIST_ID ||
+                updatingPlaylist ||
+                loadingItems ||
+                items.length === 0
+              }
+              title={t('playlist.openReading', '打开阅读列表')}
+            >
+              <FontAwesomeIcon icon={faBookOpen} />
+              <span>{t('playlist.openReading', '打开阅读列表')}</span>
+            </button>
+          </div>
+
           <div className="playlist-sidebar-header">
             <h3>{t('playlist.playlists')}</h3>
             <button
@@ -386,53 +490,87 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
             ) : playlists.length === 0 ? (
               <div className="playlist-tree-empty">{t('playlist.noPlaylists')}</div>
             ) : (
-              playlists.map((playlist) => (
+              <>
                 <div
-                  key={playlist.id}
-                  className={`playlist-tree-item ${selectedPlaylistId === playlist.id ? 'active' : ''} ${dragOverPlaylistId === playlist.id ? 'drag-over' : ''}`}
-                  onClick={() => setSelectedPlaylistId(playlist.id)}
-                  onDragOver={(e) => handlePlaylistDragOver(e, playlist.id)}
-                  onDragLeave={handlePlaylistDragLeave}
-                  onDrop={(e) => handlePlaylistDrop(e, playlist.id)}
+                  className={`playlist-tree-item ${selectedPlaylistId === UNASSIGNED_PLAYLIST_ID ? 'active' : ''}`}
+                  onClick={() => setSelectedPlaylistId(UNASSIGNED_PLAYLIST_ID)}
+                  title={t('playlist.unassignedHint', '显示未加入任何播放列表的视频')}
                 >
                   <div className="playlist-tree-item-content">
-                    <FontAwesomeIcon 
-                      icon={selectedPlaylistId === playlist.id ? faFolderOpen : faFolder} 
-                      className="playlist-tree-icon"
-                    />
-                    <span className="playlist-tree-name">{playlist.name}</span>
-                  </div>
-                  <div className="playlist-tree-item-actions" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="playlist-tree-edit-button"
-                      onClick={(e) => handleRenamePlaylist(playlist.id, e)}
-                      disabled={updatingPlaylist}
-                      title={t('playlist.renamePlaylist')}
-                    >
-                      <FontAwesomeIcon icon={faEdit} />
-                    </button>
-                    <button
-                      className="playlist-tree-delete-button"
-                      onClick={(e) => handleDeletePlaylist(playlist.id, e)}
-                      disabled={updatingPlaylist}
-                      title={t('playlist.deletePlaylist')}
-                    >
-                      <FontAwesomeIcon icon={faTrash} />
-                    </button>
+                    <FontAwesomeIcon icon={selectedPlaylistId === UNASSIGNED_PLAYLIST_ID ? faFolderOpen : faFolder} className="playlist-tree-icon" />
+                    <span className="playlist-tree-name">
+                      {t('playlist.unassigned', '未加入任何播放列表')}
+                      <span className="playlist-tree-count">
+                        {loadingAssigned ? t('app.loading') : `(${unassignedVideos.length})`}
+                      </span>
+                    </span>
                   </div>
                 </div>
-              ))
+
+                {playlists.map((playlist) => (
+                  <div
+                    key={playlist.id}
+                    className={`playlist-tree-item ${selectedPlaylistId === playlist.id ? 'active' : ''} ${dragOverPlaylistId === playlist.id ? 'drag-over' : ''}`}
+                    onClick={() => setSelectedPlaylistId(playlist.id)}
+                    onDragOver={(e) => handlePlaylistDragOver(e, playlist.id)}
+                    onDragLeave={handlePlaylistDragLeave}
+                    onDrop={(e) => handlePlaylistDrop(e, playlist.id)}
+                  >
+                    <div className="playlist-tree-item-content">
+                      <FontAwesomeIcon
+                        icon={selectedPlaylistId === playlist.id ? faFolderOpen : faFolder}
+                        className="playlist-tree-icon"
+                      />
+                      <span className="playlist-tree-name">{playlist.name}</span>
+                    </div>
+                    <div className="playlist-tree-item-actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="playlist-tree-edit-button"
+                        onClick={(e) => handleRenamePlaylist(playlist.id, e)}
+                        disabled={updatingPlaylist}
+                        title={t('playlist.renamePlaylist')}
+                      >
+                        <FontAwesomeIcon icon={faEdit} />
+                      </button>
+                      <button
+                        className="playlist-tree-delete-button"
+                        onClick={(e) => handleDeletePlaylist(playlist.id, e)}
+                        disabled={updatingPlaylist}
+                        title={t('playlist.deletePlaylist')}
+                      >
+                        <FontAwesomeIcon icon={faTrash} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
 
           {/* Selected playlist items */}
-          {selectedPlaylistId !== null && (
+          {selectedPlaylistId !== null && selectedPlaylistId !== UNASSIGNED_PLAYLIST_ID && (
             <div className="playlist-items-panel">
               <div className="playlist-items-header">
                 <h4>
                   {playlists.find(p => p.id === selectedPlaylistId)?.name || t('playlist.title')}
                 </h4>
                 <div className="playlist-items-actions">
+                  <button
+                    className="open-playlist-player-button"
+                    onClick={handleOpenPlaylistPlayer}
+                    title={t('playlist.openPlayer', '打开播放页')}
+                    disabled={updatingPlaylist || loadingItems || items.length === 0}
+                  >
+                    <FontAwesomeIcon icon={faPlay} />
+                  </button>
+                  <button
+                    className="open-reading-list-button"
+                    onClick={handleOpenReadingList}
+                    title={t('playlist.openReading', '打开阅读列表')}
+                    disabled={updatingPlaylist || loadingItems || items.length === 0}
+                  >
+                    <FontAwesomeIcon icon={faBookOpen} />
+                  </button>
                   <button 
                     className="clear-button"
                     onClick={handleClear}
@@ -475,7 +613,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                         </div>
                       </div>
                       <div className="playlist-item-actions">
-                        {item.status === 'completed' && (
+                        {isPlayableStatus(item.status) && (
                           <button
                             className="play-button"
                             onClick={() => handlePlay(item.video_record_id)}
@@ -506,27 +644,51 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
           <div className="videos-section">
             <div className="videos-header">
               <h3>{t('playlist.allVideos')}</h3>
-              <div className="videos-actions">
-                <button
-                  className="select-all-button"
-                  onClick={handleSelectAll}
-                >
-                  {selectedVideoIds.size === videos.length ? t('playlist.deselectAll') : t('playlist.selectAll')}
-                </button>
-                {selectedVideoIds.size > 0 && (
+              <div className="videos-controls">
+                <div className="videos-search">
+                  <input
+                    value={videoSearch}
+                    onChange={(e) => setVideoSearch(e.target.value)}
+                    placeholder={t('playlist.searchPlaceholder', '搜索标题/URL/关键词...')}
+                    aria-label={t('playlist.searchPlaceholder', '搜索标题/URL/关键词...')}
+                  />
+                  {videoSearch.trim() && (
+                    <button
+                      type="button"
+                      className="videos-search-clear"
+                      onClick={() => setVideoSearch('')}
+                      title={t('playlist.clearSearch', '清除')}
+                      aria-label={t('playlist.clearSearch', '清除')}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="videos-actions">
+                  <button className="select-all-button" onClick={handleSelectAll} disabled={filteredSourceVideos.length === 0}>
+                    {filteredSourceVideos.length > 0 && filteredSourceVideos.every((v) => selectedVideoIds.has(v.id))
+                      ? t('playlist.deselectAll')
+                      : t('playlist.selectAll')}
+                  </button>
                   <span className="selected-count">
-                    {t('playlist.selectedCount', { count: selectedVideoIds.size })}
+                    {t('playlist.selectedCount', { count: selectedVideoIds.size })}{' '}
+                    <span className="selected-count-muted">
+                      ({filteredSourceVideos.length}/{sourceVideos.length})
+                    </span>
                   </span>
-                )}
+                </div>
               </div>
             </div>
             {loadingVideos ? (
               <div className="empty-state">{t('app.loading')}</div>
             ) : videos.length === 0 ? (
               <div className="empty-state">{t('playlist.noVideos')}</div>
+            ) : filteredSourceVideos.length === 0 ? (
+              <div className="empty-state">{t('playlist.noSearchResults', '没有匹配的视频')}</div>
             ) : (
               <div className="videos-list">
-                {videos.map((video) => (
+                {filteredSourceVideos.map((video) => (
                   <div
                     key={video.id}
                     className={`video-item ${selectedVideoIds.has(video.id) ? 'selected' : ''} ${draggedVideoIds.has(video.id) ? 'dragging' : ''}`}
@@ -536,6 +698,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                   >
                     <input
                       type="checkbox"
+                      aria-label={`${t('playlist.selectVideo', '选择视频')} ${video.id}`}
                       checked={selectedVideoIds.has(video.id)}
                       onChange={(e) => handleVideoSelect(video.id, e.target.checked)}
                       className="video-checkbox"
@@ -554,7 +717,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                         )}
                       </div>
                     </div>
-                    {video.status === 'completed' && (
+                    {isPlayableStatus(video.status) && (
                       <button
                         className="video-play-button"
                         onClick={() => handlePlay(video.id)}

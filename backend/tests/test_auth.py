@@ -3,18 +3,24 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def test_login_success(client: TestClient):
+def test_login_success(client: TestClient, test_user):
     """Test successful login"""
-    response = client.post("/api/auth/login", json={"password": "admin123"})
+    response = client.post(
+        "/api/auth/login",
+        json={"username": test_user.username, "password": "admin123"},
+    )
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
 
 
-def test_login_failure(client: TestClient):
+def test_login_failure(client: TestClient, test_user):
     """Test failed login with wrong password"""
-    response = client.post("/api/auth/login", json={"password": "wrong_password"})
+    response = client.post(
+        "/api/auth/login",
+        json={"username": test_user.username, "password": "wrong_password"},
+    )
     assert response.status_code == 401
     assert "detail" in response.json()
 

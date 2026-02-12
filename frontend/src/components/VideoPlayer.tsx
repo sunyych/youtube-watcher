@@ -6,7 +6,9 @@ import {
   faPlay, 
   faPause, 
   faArrowLeft,
-  faArrowRight
+  faArrowRight,
+  faExpand,
+  faCompress
 } from '@fortawesome/free-solid-svg-icons'
 import { videoApi, playlistApi, PlaylistItemResponse } from '../services/api'
 import './VideoPlayer.css'
@@ -14,6 +16,9 @@ import './VideoPlayer.css'
 interface VideoPlayerProps {
   onLogout: () => void
 }
+
+const PLAYABLE_STATUSES = new Set(['converting', 'transcribing', 'summarizing', 'completed'])
+const isPlayableStatus = (status?: string) => !!status && PLAYABLE_STATUSES.has(status)
 
 const VideoPlayer: React.FC<VideoPlayerProps> = () => {
   const { t } = useTranslation()
@@ -23,10 +28,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
   const from = searchParams.get('from') || 'history'
   
   const videoRef = useRef<HTMLVideoElement>(null)
+  const fullscreenTargetRef = useRef<HTMLDivElement>(null)
   const [videoInfo, setVideoInfo] = useState<any>(null)
   const [playlistItems, setPlaylistItems] = useState<PlaylistItemResponse[]>([])
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -45,6 +52,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
   }, [from])
 
   useEffect(() => {
+    const update = () => {
+      const target = fullscreenTargetRef.current
+      setIsFullscreen(!!target && document.fullscreenElement === target)
+    }
+    update()
+    document.addEventListener('fullscreenchange', update)
+    // Safari legacy event (harmless elsewhere)
+    document.addEventListener('webkitfullscreenchange' as any, update)
+    return () => {
+      document.removeEventListener('fullscreenchange', update)
+      document.removeEventListener('webkitfullscreenchange' as any, update)
+    }
+  }, [])
+
+  useEffect(() => {
     if (from === 'playlist' && playlistItems.length > 0 && videoId) {
       const index = playlistItems.findIndex(item => item.video_record_id === parseInt(videoId))
       setCurrentIndex(index)
@@ -55,10 +77,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
     setLoading(true)
     setError(null)
     try {
-      const status = await videoApi.getStatus(id)
+      // Count as a "read" when opening the player
+      const status = await videoApi.getStatus(id, { countRead: true })
       setVideoInfo(status)
       
-      if (status.status !== 'completed') {
+      // Allow playback while processing (e.g. converting/transcribing/summarizing) as long as stream is available.
+      if (!isPlayableStatus(status.status)) {
         setError(t('player.videoNotReady'))
       }
     } catch (err: any) {
@@ -123,6 +147,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
     }
   }
 
+  const toggleFullscreen = async () => {
+    const target = fullscreenTargetRef.current
+    if (!target) return
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        return
+      }
+      if (target.requestFullscreen) {
+        await target.requestFullscreen()
+        return
+      }
+    } catch (e) {
+      console.warn('Fullscreen API failed, falling back:', e)
+    }
+
+    // iOS Safari fallback: use native video fullscreen if available
+    const v: any = videoRef.current
+    if (v && typeof v.webkitEnterFullscreen === 'function') {
+      v.webkitEnterFullscreen()
+    }
+  }
+
   const formatTime = (seconds: number): string => {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
@@ -181,7 +229,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
   return (
     <div className="video-player-page">
       <header className="player-header">
-        <button className="back-button" onClick={() => navigate(-1)}>
+        <button
+          className="back-button"
+          onClick={() => navigate(-1)}
+          title={t('player.goBack')}
+          aria-label={t('player.goBack')}
+        >
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
         <h2 className="player-title">{videoInfo.title || 'Video'}</h2>
@@ -206,10 +259,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
               </button>
             </>
           )}
+          <button
+            className="nav-button"
+            onClick={() => void toggleFullscreen()}
+            title={isFullscreen ? t('player.exitFullscreen') : t('player.fullscreen')}
+            aria-label={isFullscreen ? t('player.exitFullscreen') : t('player.fullscreen')}
+          >
+            <FontAwesomeIcon icon={isFullscreen ? faCompress : faExpand} />
+          </button>
         </div>
       </header>
 
-      <div className="player-container">
+      <div className="player-container" ref={fullscreenTargetRef}>
         <div className="video-container">
           <video
             ref={videoRef}
@@ -234,7 +295,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
           <button
             className="play-pause-button"
             onClick={handlePlayPause}
-            disabled={videoInfo.status !== 'completed'}
+            disabled={!isPlayableStatus(videoInfo.status)}
+            title={isPlaying ? t('player.pause') : t('player.play')}
+            aria-label={isPlaying ? t('player.pause') : t('player.play')}
           >
             <FontAwesomeIcon icon={isPlaying ? faPause : faPlay} />
           </button>
@@ -247,7 +310,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
               value={currentTime}
               onChange={handleSeek}
               className="progress-bar"
-              disabled={videoInfo.status !== 'completed'}
+              disabled={!isPlayableStatus(videoInfo.status)}
+              title={t('player.seek')}
+              aria-label={t('player.seek')}
             />
             <div className="time-display">
               <span>{formatTime(currentTime)}</span>

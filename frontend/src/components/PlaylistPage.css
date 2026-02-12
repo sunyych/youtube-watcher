@@ -13,7 +13,7 @@
   height: calc(100vh - 80px);
 }
 
-/* Left sidebar: Playlist tree */
+/* Left sidebar: Reading list + Playlist tree */
 .playlist-sidebar {
   width: 350px;
   min-width: 350px;
@@ -23,6 +23,56 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Reading list section - above playlists */
+.reading-list-section {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e0e0e0;
+  background: linear-gradient(180deg, #f8f9ff 0%, #fff 100%);
+}
+
+.reading-list-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.reading-list-section-icon {
+  color: #667eea;
+  font-size: 1rem;
+}
+
+.reading-list-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-color, #333);
+}
+
+.reading-list-open-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.reading-list-open-button:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.reading-list-open-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .playlist-sidebar-header {
@@ -121,6 +171,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.95rem;
+}
+
+.playlist-tree-count {
+  color: #999;
+  margin-left: 8px;
+  font-size: 0.85em;
 }
 
 .playlist-tree-item-actions {
@@ -241,6 +297,52 @@
 .playlist-items-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.open-playlist-player-button {
+  padding: 0.5rem 0.8rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.open-playlist-player-button:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.open-playlist-player-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.open-reading-list-button {
+  padding: 0.5rem 0.8rem;
+  background: #2ecc71;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.open-reading-list-button:hover:not(:disabled) {
+  background: #27ae60;
+}
+
+.open-reading-list-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .clear-button {
@@ -462,9 +564,56 @@
   color: #333;
 }
 
+.videos-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.videos-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.videos-search input {
+  width: min(420px, 50vw);
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.videos-search input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.videos-search-clear {
+  position: absolute;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid #ddd;
+  background: #fff;
+  cursor: pointer;
+  line-height: 22px;
+  padding: 0;
+  color: #666;
+}
+
+.videos-search-clear:hover {
+  background: #f3f3f3;
+}
+
 .videos-actions {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
 }
 
 .select-all-button {
@@ -495,6 +644,11 @@
   color: #667eea;
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+.selected-count-muted {
+  color: #888;
+  font-weight: 400;
 }
 
 .videos-list {

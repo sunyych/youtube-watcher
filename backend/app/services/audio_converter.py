@@ -5,15 +5,20 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
 class AudioConverter:
     """Convert video to audio using ffmpeg"""
     
-    def __init__(self, storage_dir: str):
+    def __init__(self, storage_dir: str, sample_rate: Optional[int] = None):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.sample_rate = sample_rate if sample_rate is not None else getattr(
+            settings, "audio_target_sample_rate", 16000
+        )
     
     def convert_to_audio(self, video_path: str, output_format: str = "wav") -> str:
         """
@@ -40,7 +45,7 @@ class AudioConverter:
                 '-i', str(video_path),
                 '-vn',  # No video
                 '-acodec', 'pcm_s16le' if output_format == 'wav' else 'libmp3lame',
-                '-ar', '16000',  # 16kHz sample rate (Whisper standard)
+                '-ar', str(self.sample_rate),  # Target sample rate (e.g. 16kHz for Whisper/VAD)
                 '-ac', '1',  # Mono
                 '-y',  # Overwrite output file
                 str(audio_path)

@@ -198,12 +198,7 @@ If you encounter YouTube download errors:
    docker compose exec backend pip install --upgrade yt-dlp
    ```
 
-2. **Use cookies file** (recommended):
-   - Export cookies from your browser using a browser extension
-   - Save as `cookies.txt` in the project root
-   - Update `video_downloader.py` to use: `'cookiefile': '/app/cookies.txt'`
-
-3. **Try different video**: Some videos may have restrictions
+2. **Try different video**: Some videos may have restrictions
 
 ### Docker build fails
 

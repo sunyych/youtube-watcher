@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { authApi } from '../services/api'
 import './Login.css'
@@ -12,8 +12,28 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [isRegister, setIsRegister] = useState(false)
+  const [allowRegistration, setAllowRegistration] = useState(true)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const cfg = await authApi.getConfig()
+        if (cancelled) return
+        setAllowRegistration(!!cfg.allow_registration)
+        if (!cfg.allow_registration) {
+          setIsRegister(false)
+        }
+      } catch {
+        // If config cannot be fetched, default to allowing registration.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,17 +90,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {loading ? (isRegister ? t('login.registering') : t('login.loggingIn')) : (isRegister ? t('login.register') : t('login.login'))}
           </button>
           <div className="login-footer">
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => {
-                setIsRegister(!isRegister)
-                setError('')
-              }}
-              disabled={loading}
-            >
-              {isRegister ? t('login.hasAccount') : t('login.noAccount')}
-            </button>
+            {allowRegistration && (
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  setIsRegister(!isRegister)
+                  setError('')
+                }}
+                disabled={loading}
+              >
+                {isRegister ? t('login.hasAccount') : t('login.noAccount')}
+              </button>
+            )}
           </div>
         </form>
       </div>

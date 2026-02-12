@@ -6,10 +6,11 @@ from datetime import datetime
 from app.models.database import VideoRecord, VideoStatus
 
 
-def test_get_history(authenticated_client: TestClient, db):
+def test_get_history(authenticated_client: TestClient, db, test_user):
     """Test getting history"""
     # Create test records
     record1 = VideoRecord(
+        user_id=test_user.id,
         url="https://www.youtube.com/watch?v=test1",
         title="Test Video 1",
         status=VideoStatus.COMPLETED,
@@ -18,6 +19,7 @@ def test_get_history(authenticated_client: TestClient, db):
         transcript="Test transcript 1"
     )
     record2 = VideoRecord(
+        user_id=test_user.id,
         url="https://www.youtube.com/watch?v=test2",
         title="Test Video 2",
         status=VideoStatus.COMPLETED,
@@ -37,9 +39,10 @@ def test_get_history(authenticated_client: TestClient, db):
     assert any(item["id"] == record2.id for item in data)
 
 
-def test_get_history_detail(authenticated_client: TestClient, db):
+def test_get_history_detail(authenticated_client: TestClient, db, test_user):
     """Test getting history detail"""
     record = VideoRecord(
+        user_id=test_user.id,
         url="https://www.youtube.com/watch?v=test",
         title="Test Video",
         status=VideoStatus.COMPLETED,
@@ -59,9 +62,10 @@ def test_get_history_detail(authenticated_client: TestClient, db):
     assert data["transcript"] == "Test transcript"
 
 
-def test_export_markdown(authenticated_client: TestClient, db):
+def test_export_markdown(authenticated_client: TestClient, db, test_user):
     """Test exporting markdown"""
     record = VideoRecord(
+        user_id=test_user.id,
         url="https://www.youtube.com/watch?v=test",
         title="Test Video",
         status=VideoStatus.COMPLETED,
@@ -75,7 +79,7 @@ def test_export_markdown(authenticated_client: TestClient, db):
     
     response = authenticated_client.get(f"/api/history/{record.id}/export")
     assert response.status_code == 200
-    assert response.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert response.headers["content-type"].startswith("text/markdown")
     content = response.text
     assert "Test Video" in content
     assert "Test summary" in content

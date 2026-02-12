@@ -7,7 +7,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.database import get_db
-from app.models.database import Base
+from app.models.database import Base, User
+from app.routers.auth import get_password_hash
 
 # Use in-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -47,9 +48,22 @@ def client(db):
 
 
 @pytest.fixture
-def auth_token(client):
+def test_user(db):
+    """Create a default test user (matches auth expectations)."""
+    user = User(username="admin", hashed_password=get_password_hash("admin123"))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def auth_token(client, test_user):
     """Get authentication token"""
-    response = client.post("/api/auth/login", json={"password": "admin123"})
+    response = client.post(
+        "/api/auth/login",
+        json={"username": test_user.username, "password": "admin123"},
+    )
     assert response.status_code == 200
     return response.json()["access_token"]
 

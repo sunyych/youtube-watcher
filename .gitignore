@@ -119,3 +119,6 @@ coverage/
 .npm
 .eslintcache
 .stylelintcache
+
+# Local YouTube cookies (DO NOT COMMIT)
+www.youtube.com_cookies.txt

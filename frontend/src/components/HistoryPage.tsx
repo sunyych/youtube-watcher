@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import Header from './Header'
 import ReactMarkdown from 'react-markdown'
@@ -10,9 +10,10 @@ import {
   faDownload, 
   faRedo, 
   faTrash, 
-  faSync,
   faPlay,
-  faPlus
+  faPlus,
+  faChevronLeft,
+  faChevronRight
 } from '@fortawesome/free-solid-svg-icons'
 import { historyApi, videoApi, HistoryItem, HistoryDetail, playlistApi } from '../services/api'
 import { useNavigate } from 'react-router-dom'
@@ -27,6 +28,12 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   type HistoryTab = 'noSummary' | 'withSummary'
+  type HistoryDisplayMode = 'compact' | 'standard'
+  type HistorySort = 'dateDesc' | 'dateAsc' | 'readDesc' | 'titleAsc'
+
+  const HISTORY_SORT_KEY = 'history_sort_v1'
+  const HISTORY_UNREAD_ONLY_KEY = 'history_unread_only_v1'
+
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [expandedDetail, setExpandedDetail] = useState<HistoryDetail | null>(null)
@@ -47,9 +54,30 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize] = useState(10)
+  const [pageSize] = useState(12)
   const [totalCount, setTotalCount] = useState(0)
-  const [activeTab, setActiveTab] = useState<HistoryTab>('noSummary')
+  // Default to showing items WITH summary
+  const [activeTab, setActiveTab] = useState<HistoryTab>('withSummary')
+  const [displayMode, setDisplayMode] = useState<HistoryDisplayMode>(() => {
+    if (typeof window === 'undefined') return 'standard'
+    const saved = localStorage.getItem('history_display_mode') as HistoryDisplayMode | null
+    if (saved === 'compact' || saved === 'standard') return saved
+    // Default to compact on small screens (better for mobile reading)
+    return window.innerWidth <= 768 ? 'compact' : 'standard'
+  })
+  const [sortBy, setSortBy] = useState<HistorySort>(() => {
+    if (typeof window === 'undefined') return 'dateDesc'
+    const saved = localStorage.getItem(HISTORY_SORT_KEY) as HistorySort | null
+    if (saved === 'dateDesc' || saved === 'dateAsc' || saved === 'readDesc' || saved === 'titleAsc') return saved
+    return 'dateDesc'
+  })
+  const [unreadOnly, setUnreadOnly] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const saved = localStorage.getItem(HISTORY_UNREAD_ONLY_KEY)
+    if (saved === '1') return true
+    if (saved === '0') return false
+    return false
+  })
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -131,21 +159,58 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     setSearchQuery('')
   }
 
+  const handleDisplayModeChange = (mode: HistoryDisplayMode) => {
+    setDisplayMode(mode)
+    try {
+      localStorage.setItem('history_display_mode', mode)
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   const totalPages = Math.ceil(totalCount / pageSize)
+
+  const closeDetailModal = () => {
+    setExpandedId(null)
+    setExpandedDetail(null)
+    setEditingId(null)
+  }
+
+  const getReadCount = (item: Pick<HistoryItem, 'read_count'> | null | undefined) => item?.read_count ?? 0
+
+  const handleSortChange = (next: HistorySort) => {
+    setSortBy(next)
+    try {
+      localStorage.setItem(HISTORY_SORT_KEY, next)
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  const handleUnreadOnlyChange = (next: boolean) => {
+    setUnreadOnly(next)
+    try {
+      localStorage.setItem(HISTORY_UNREAD_ONLY_KEY, next ? '1' : '0')
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   const handleExpand = async (id: number) => {
     if (expandedId === id) {
-      setExpandedId(null)
-      setExpandedDetail(null)
-      setEditingId(null)
+      closeDetailModal()
       return
     }
 
     try {
-      const detail = await historyApi.getDetail(id)
+      // Count as a "read" when opening the detail/summary view
+      const detail = await historyApi.getDetail(id, { countRead: true })
       setExpandedId(id)
       setExpandedDetail(detail)
       setEditTranscript(detail.transcript || '')
+      setEditingId(null)
+      // Sync list read_count with the updated detail response
+      setHistory((prev) => prev.map((it) => (it.id === id ? { ...it, read_count: detail.read_count } : it)))
     } catch (err) {
       console.error('Failed to load detail:', err)
       alert(t('history.item.loadDetailFailed'))
@@ -304,11 +369,6 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     }
   }
 
-  const openReprocessDialog = (id: number) => {
-    setReprocessDialogOpen(id)
-    setReprocessLanguage('')
-  }
-
   const closeReprocessDialog = () => {
     setReprocessDialogOpen(null)
     setReprocessLanguage('')
@@ -331,12 +391,6 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const language = localStorage.getItem('language') || 'en'
-    return date.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')
-  }
-
   const formatUploadDate = (dateString?: string) => {
     if (!dateString) return null
     const date = new Date(dateString)
@@ -347,6 +401,68 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
       day: 'numeric'
     })
   }
+
+  const formatDisplayDate = (item: HistoryItem) => {
+    return formatUploadDate(item.upload_date) || formatUploadDate(item.created_at) || null
+  }
+
+  const getSortDateMs = (item: HistoryItem) => {
+    const raw = item.upload_date || item.created_at
+    const ms = new Date(raw).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+
+  const sortedHistory = useMemo(() => {
+    const items = [...history]
+    items.sort((a, b) => {
+      if (sortBy === 'dateDesc') {
+        const diff = getSortDateMs(b) - getSortDateMs(a)
+        if (diff !== 0) return diff
+        return b.id - a.id
+      }
+      if (sortBy === 'dateAsc') {
+        const diff = getSortDateMs(a) - getSortDateMs(b)
+        if (diff !== 0) return diff
+        return a.id - b.id
+      }
+      if (sortBy === 'readDesc') {
+        const diff = getReadCount(b) - getReadCount(a)
+        if (diff !== 0) return diff
+        // tie-breaker by date desc
+        const dateDiff = getSortDateMs(b) - getSortDateMs(a)
+        if (dateDiff !== 0) return dateDiff
+        return b.id - a.id
+      }
+      // titleAsc
+      const at = (a.title || a.url || '').toLowerCase()
+      const bt = (b.title || b.url || '').toLowerCase()
+      if (at < bt) return -1
+      if (at > bt) return 1
+      return a.id - b.id
+    })
+    return items
+  }, [history, sortBy])
+
+  const visibleHistory = useMemo(() => {
+    if (!unreadOnly) return sortedHistory
+    // When unreadOnly is enabled, keep the currently opened item visible in the modal
+    // even after we increment its read_count, so navigation remains stable.
+    return sortedHistory.filter((it) => {
+      if (expandedId !== null && it.id === expandedId) return true
+      return getReadCount(it) === 0
+    })
+  }, [sortedHistory, unreadOnly, expandedId])
+
+  const currentVisibleIndex = useMemo(() => {
+    if (expandedId === null) return -1
+    return visibleHistory.findIndex((it) => it.id === expandedId)
+  }, [visibleHistory, expandedId])
+
+  const prevVisibleId = currentVisibleIndex > 0 ? visibleHistory[currentVisibleIndex - 1]?.id : null
+  const nextVisibleId =
+    currentVisibleIndex >= 0 && currentVisibleIndex < visibleHistory.length - 1
+      ? visibleHistory[currentVisibleIndex + 1]?.id
+      : null
 
   const parseKeywords = (keywords?: string): string[] => {
     if (!keywords) return []
@@ -418,77 +534,91 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     return formatted.trim()
   }
 
-  const renderHistoryItem = (item: HistoryItem) => (
-    <div key={item.id} className="history-tile">
-      <div className="history-tile-thumbnail" onClick={() => handleExpand(item.id)}>
-        {item.thumbnail_path ? (
-          <img 
-            src={videoApi.getThumbnailUrl(item.id)} 
-            alt={item.title || 'Video thumbnail'}
-            className="thumbnail-image"
-            onError={(e) => {
-              // Fallback to placeholder if image fails to load
-              (e.target as HTMLImageElement).style.display = 'none'
-              const placeholder = (e.target as HTMLImageElement).nextElementSibling as HTMLElement
-              if (placeholder) placeholder.style.display = 'flex'
-            }}
-          />
-        ) : null}
-        <div className="thumbnail-placeholder" style={{ display: item.thumbnail_path ? 'none' : 'flex' }}>
-          <FontAwesomeIcon icon={faPlay} />
-        </div>
-        <div className="thumbnail-overlay">
-          <span className={`status-badge status-${item.status}`}>
-            {item.status}
-          </span>
-        </div>
+  const renderHistoryItemCompact = (item: HistoryItem) => (
+    <button
+      key={item.id}
+      type="button"
+      className="history-row"
+      onClick={() => handleExpand(item.id)}
+      title={item.title || item.url}
+    >
+      <div className="history-row-title">
+        {item.title || item.url}
       </div>
-      <div className="history-tile-content">
-        <h3
-          className="history-tile-title"
-          onClick={() => handleExpand(item.id)}
-          title={item.title || item.url}
-        >
-          {item.title || item.url}
-        </h3>
-        <div className="history-tile-meta">
-          {item.upload_date && (
-            <span className="history-tile-upload-date">
-              {formatUploadDate(item.upload_date)}
-            </span>
-          )}
-          {item.language && (
-            <span className="history-tile-language">{item.language}</span>
+      <div className="history-row-meta">
+        {formatDisplayDate(item) && (
+          <span className="history-row-date">{formatDisplayDate(item)}</span>
+        )}
+        <span className="read-count-badge" title={t('history.item.readCountTitle')}>
+          {t('history.item.readCount', { count: getReadCount(item) })}
+        </span>
+      </div>
+      {item.keywords && (
+        <div className="history-row-tags">
+          {parseKeywords(item.keywords).slice(0, 5).map((keyword, idx) => (
+            <span key={idx} className="keyword-tag-small">{keyword}</span>
+          ))}
+          {parseKeywords(item.keywords).length > 5 && (
+            <span className="keyword-more">+{parseKeywords(item.keywords).length - 5}</span>
           )}
         </div>
-        {expandedId !== item.id && item.keywords && (
-          <div className="history-tile-keywords">
-            {parseKeywords(item.keywords).slice(0, 3).map((keyword, idx) => (
-              <span key={idx} className="keyword-tag-small">{keyword}</span>
-            ))}
-            {parseKeywords(item.keywords).length > 3 && (
-              <span className="keyword-more">+{parseKeywords(item.keywords).length - 3}</span>
+      )}
+    </button>
+  )
+
+  const renderHistoryItemStandard = (item: HistoryItem) => (
+    <div key={item.id} className="history-card">
+      <button
+        type="button"
+        className="history-card-open"
+        onClick={() => handleExpand(item.id)}
+        title={item.title || item.url}
+      >
+        <div className="history-card-content">
+          <h3 className="history-card-title">
+            {item.title || item.url}
+          </h3>
+          <div className="history-card-meta">
+            {formatDisplayDate(item) && (
+              <span className="history-card-date">{formatDisplayDate(item)}</span>
             )}
+            <span className="read-count-badge" title={t('history.item.readCountTitle')}>
+              {t('history.item.readCount', { count: getReadCount(item) })}
+            </span>
+            {item.language && (
+              <span className="history-card-language">{item.language}</span>
+            )}
+            <span className={`status-badge-inline status-${item.status}`}>
+              {item.status}
+            </span>
           </div>
-        )}
-        <div className="history-tile-actions">
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="tile-action-button"
-            onClick={(e) => e.stopPropagation()}
-            title={item.url}
-          >
-            <FontAwesomeIcon icon={faExternalLinkAlt} />
-          </a>
+          {expandedId !== item.id && item.keywords && (
+            <div className="history-card-keywords">
+              {parseKeywords(item.keywords).slice(0, 3).map((keyword, idx) => (
+                <span key={idx} className="keyword-tag-small">{keyword}</span>
+              ))}
+              {parseKeywords(item.keywords).length > 3 && (
+                <span className="keyword-more">+{parseKeywords(item.keywords).length - 3}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </button>
+
+      <div className="history-card-actions">
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="tile-action-button"
+          title={item.url}
+        >
+          <FontAwesomeIcon icon={faExternalLinkAlt} />
+        </a>
           {item.status === 'failed' && (
             <button
               className="tile-action-button"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleRetry(item.id)
-              }}
+              onClick={() => handleRetry(item.id)}
               disabled={retrying === item.id}
               title={retrying === item.id ? t('history.item.retrying') : t('history.item.retry')}
             >
@@ -499,20 +629,14 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
             <>
               <button
                 className="tile-action-button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handlePlay(item.id)
-                }}
+                onClick={() => handlePlay(item.id)}
                 title={t('history.item.play')}
               >
                 <FontAwesomeIcon icon={faPlay} />
               </button>
               <button
                 className="tile-action-button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleAddToPlaylist(item.id)
-                }}
+                onClick={() => handleAddToPlaylist(item.id)}
                 disabled={addingToPlaylist === item.id}
                 title={addingToPlaylist === item.id ? t('history.item.addingToPlaylist') : t('history.item.addToPlaylist')}
               >
@@ -520,10 +644,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
               </button>
               <button
                 className="tile-action-button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleExport(item.id, item.title)
-                }}
+                onClick={() => handleExport(item.id, item.title)}
                 disabled={exporting === item.id}
                 title={exporting === item.id ? t('history.item.exporting') : t('history.item.export')}
               >
@@ -533,193 +654,20 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
           )}
           <button
             className="tile-action-button"
-            onClick={(e) => {
-              e.stopPropagation()
-              handleDelete(item.id, item.title)
-            }}
+            onClick={() => handleDelete(item.id, item.title)}
             disabled={deleting === item.id}
             title={t('history.item.deleteTitle')}
           >
             <FontAwesomeIcon icon={faTrash} />
           </button>
-        </div>
       </div>
-      {expandedId === item.id && expandedDetail && (
-        <div className="history-item-detail">
-          {/* Keywords Display (read-only) */}
-          <div className="keywords-section">
-            <div className="keywords-header">
-              <h4>{t('history.item.keywords')}</h4>
-              {!editingId && expandedDetail && (
-                <button
-                  className="generate-keywords-button"
-                  onClick={() => handleGenerateKeywords(item.id)}
-                  disabled={generatingKeywords === item.id || !expandedDetail.transcript}
-                  title={t('history.item.generateKeywordsTitle')}
-                >
-                  {generatingKeywords === item.id ? t('history.item.generatingKeywords') : t('history.item.generateKeywords')}
-                </button>
-              )}
-            </div>
-            <div className="keywords-display">
-              {parseKeywords(expandedDetail.keywords).length > 0 ? (
-                parseKeywords(expandedDetail.keywords).map((keyword, idx) => (
-                  <span key={idx} className="keyword-tag">{keyword}</span>
-                ))
-              ) : (
-                <span className="no-keywords">{t('history.item.noKeywords')}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Summary Display */}
-          {expandedDetail.summary && (
-            <div className="summary-section">
-              <h4>{t('history.item.summary')}</h4>
-              <div className="markdown-content summary-content">
-                <ReactMarkdown
-                  components={{
-                    code({ node, inline, className, children, ...props }: any) {
-                      const match = /language-(\w+)/.exec(className || '')
-                      return !inline && match ? (
-                        <SyntaxHighlighter
-                          style={vscDarkPlus}
-                          language={match[1]}
-                          PreTag="div"
-                          {...props}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      ) : (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      )
-                    }
-                  }}
-                >
-                  {expandedDetail.summary}
-                </ReactMarkdown>
-              </div>
-            </div>
-          )}
-
-          {/* Transcript/Markdown Content Display/Edit */}
-          <div className="transcript-section">
-            <div className="transcript-header">
-              <h4>{t('history.item.content')}</h4>
-              {!editingId && (
-                <button
-                  className="edit-content-button"
-                  onClick={() => handleEdit(item.id)}
-                >
-                  {t('history.item.edit')}
-                </button>
-              )}
-            </div>
-            {editingId === item.id ? (
-              <div className="transcript-edit">
-                <textarea
-                  value={editTranscript}
-                  onChange={(e) => setEditTranscript(e.target.value)}
-                  className="transcript-textarea"
-                  rows={25}
-                  placeholder={t('history.item.editPlaceholder')}
-                />
-                <div className="transcript-preview">
-                  <h5>{t('history.item.markdownPreview')}</h5>
-                  <div className="markdown-content">
-                    <ReactMarkdown
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '')
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={vscDarkPlus}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          )
-                        }
-                      }}
-                    >
-                      {editTranscript || '暂无内容'}
-                    </ReactMarkdown>
-                  </div>
-                </div>
-                <div className="edit-actions">
-                  <button
-                    className="save-button"
-                    onClick={() => handleSave(item.id)}
-                    disabled={saving === item.id}
-                  >
-                    {saving === item.id ? t('history.item.saving') : t('history.item.save')}
-                  </button>
-                  <button
-                    className="cancel-button"
-                    onClick={handleCancelEdit}
-                    disabled={saving === item.id}
-                  >
-                    {t('history.item.cancel')}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="transcript-display">
-                {expandedDetail.transcript ? (
-                  <div className="markdown-content">
-                    <ReactMarkdown
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '')
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={vscDarkPlus}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          )
-                        },
-                        p: ({ children }: any) => {
-                          // Ensure paragraphs have proper spacing
-                          return <p style={{ marginBottom: '1rem', whiteSpace: 'pre-wrap' }}>{children}</p>
-                        },
-                        h1: ({ children }: any) => <h1 style={{ marginTop: '2rem', marginBottom: '1rem' }}>{children}</h1>,
-                        h2: ({ children }: any) => <h2 style={{ marginTop: '1.5rem', marginBottom: '0.75rem' }}>{children}</h2>,
-                        h3: ({ children }: any) => <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem' }}>{children}</h3>,
-                        h4: ({ children }: any) => <h4 style={{ marginTop: '1.25rem', marginBottom: '0.5rem' }}>{children}</h4>,
-                        ul: ({ children }: any) => <ul style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>{children}</ul>,
-                        ol: ({ children }: any) => <ol style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>{children}</ol>,
-                        li: ({ children }: any) => <li style={{ marginBottom: '0.25rem' }}>{children}</li>
-                      }}
-                    >
-                      {formatTextForMarkdown(expandedDetail.transcript)}
-                    </ReactMarkdown>
-                  </div>
-                ) : (
-                  <div className="no-transcript">{t('history.item.noContent')}</div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
+
+  const renderHistoryItem = (item: HistoryItem) => {
+    if (displayMode === 'compact') return renderHistoryItemCompact(item)
+    return renderHistoryItemStandard(item)
+  }
 
 
   if (loading) {
@@ -757,21 +705,69 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
         </div>
 
         <div className="history-tabs">
-          <div className="tabs-list">
-            <button
-              className={`tabs-trigger ${activeTab === 'noSummary' ? 'tabs-trigger-active' : ''}`}
-              onClick={() => handleTabChange('noSummary')}
-              type="button"
-            >
-              {t('history.tabs.noTranscript')}
-            </button>
-            <button
-              className={`tabs-trigger ${activeTab === 'withSummary' ? 'tabs-trigger-active' : ''}`}
-              onClick={() => handleTabChange('withSummary')}
-              type="button"
-            >
-              {t('history.tabs.withSummary')}
-            </button>
+          <div className="history-toolbar">
+            <div className="tabs-list">
+              <button
+                className={`tabs-trigger ${activeTab === 'withSummary' ? 'tabs-trigger-active' : ''}`}
+                onClick={() => handleTabChange('withSummary')}
+                type="button"
+              >
+                {t('history.tabs.withSummary')}
+              </button>
+              <button
+                className={`tabs-trigger ${activeTab === 'noSummary' ? 'tabs-trigger-active' : ''}`}
+                onClick={() => handleTabChange('noSummary')}
+                type="button"
+              >
+                {t('history.tabs.noTranscript')}
+              </button>
+            </div>
+
+              <div className="sort-control">
+                <span className="sort-control-label">{t('history.sort.label')}</span>
+                <select
+                  className="sort-select"
+                  value={sortBy}
+                  onChange={(e) => handleSortChange(e.target.value as HistorySort)}
+                  aria-label={t('history.sort.label')}
+                  title={t('history.sort.label')}
+                >
+                  <option value="dateDesc">{t('history.sort.dateDesc')}</option>
+                  <option value="dateAsc">{t('history.sort.dateAsc')}</option>
+                  <option value="readDesc">{t('history.sort.readDesc')}</option>
+                  <option value="titleAsc">{t('history.sort.titleAsc')}</option>
+                </select>
+              </div>
+
+            <label className="filter-control" title={t('history.filter.unreadOnly')}>
+              <input
+                type="checkbox"
+                checked={unreadOnly}
+                onChange={(e) => handleUnreadOnlyChange(e.target.checked)}
+                className="filter-checkbox"
+              />
+              <span className="filter-control-label">{t('history.filter.unreadOnly')}</span>
+            </label>
+
+            <div className="view-toggle">
+              <span className="view-toggle-label">{t('history.view.label')}</span>
+              <div className="view-toggle-buttons">
+                <button
+                  type="button"
+                  className={`view-toggle-button ${displayMode === 'compact' ? 'view-toggle-button-active' : ''}`}
+                  onClick={() => handleDisplayModeChange('compact')}
+                >
+                  {t('history.view.compact')}
+                </button>
+                <button
+                  type="button"
+                  className={`view-toggle-button ${displayMode === 'standard' ? 'view-toggle-button-active' : ''}`}
+                  onClick={() => handleDisplayModeChange('standard')}
+                >
+                  {t('history.view.standard')}
+                </button>
+              </div>
+            </div>
           </div>
           <div className="history-tab-panel">
             {history.length === 0 ? (
@@ -779,8 +775,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
                 {searchQuery ? t('history.emptyState.noResults') : t('history.emptyState.noHistory')}
               </div>
             ) : (
-              <div className="history-list">
-                {history.map(renderHistoryItem)}
+              <div className={`history-list ${displayMode === 'compact' ? 'history-list-compact' : ''}`}>
+                {visibleHistory.map(renderHistoryItem)}
               </div>
             )}
           </div>
@@ -815,6 +811,270 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
       </div>
 
       {/* Reprocess Dialog */}
+      {/* Detail Modal */}
+      {expandedId !== null && expandedDetail && (
+        <div className="modal-overlay" onClick={closeDetailModal}>
+          <div className="modal-content modal-fullscreen" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title-ellipsis">{expandedDetail.title || expandedDetail.url}</h3>
+              <span className="read-count-badge" title={t('history.item.readCountTitle')}>
+                {t('history.item.readCount', { count: getReadCount(expandedDetail) })}
+              </span>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="modal-action-button"
+                  onClick={() => prevVisibleId !== null && handleExpand(prevVisibleId)}
+                  disabled={prevVisibleId === null}
+                  title={t('history.item.previous')}
+                >
+                  <FontAwesomeIcon icon={faChevronLeft} />
+                </button>
+                <button
+                  type="button"
+                  className="modal-action-button"
+                  onClick={() => nextVisibleId !== null && handleExpand(nextVisibleId)}
+                  disabled={nextVisibleId === null}
+                  title={t('history.item.next')}
+                >
+                  <FontAwesomeIcon icon={faChevronRight} />
+                </button>
+                <a
+                  href={expandedDetail.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="modal-action-button"
+                  title={expandedDetail.url}
+                >
+                  <FontAwesomeIcon icon={faExternalLinkAlt} />
+                </a>
+                {expandedDetail.status === 'failed' && (
+                  <button
+                    className="modal-action-button"
+                    onClick={() => handleRetry(expandedId)}
+                    disabled={retrying === expandedId}
+                    title={retrying === expandedId ? t('history.item.retrying') : t('history.item.retry')}
+                  >
+                    <FontAwesomeIcon icon={faRedo} spin={retrying === expandedId} />
+                  </button>
+                )}
+                {expandedDetail.status === 'completed' && (
+                  <>
+                    <button
+                      className="modal-action-button"
+                      onClick={() => handlePlay(expandedId)}
+                      title={t('history.item.play')}
+                    >
+                      <FontAwesomeIcon icon={faPlay} />
+                    </button>
+                    <button
+                      className="modal-action-button"
+                      onClick={() => handleAddToPlaylist(expandedId)}
+                      disabled={addingToPlaylist === expandedId}
+                      title={addingToPlaylist === expandedId ? t('history.item.addingToPlaylist') : t('history.item.addToPlaylist')}
+                    >
+                      <FontAwesomeIcon icon={faPlus} spin={addingToPlaylist === expandedId} />
+                    </button>
+                    <button
+                      className="modal-action-button"
+                      onClick={() => handleExport(expandedId, expandedDetail.title)}
+                      disabled={exporting === expandedId}
+                      title={exporting === expandedId ? t('history.item.exporting') : t('history.item.export')}
+                    >
+                      <FontAwesomeIcon icon={faDownload} spin={exporting === expandedId} />
+                    </button>
+                  </>
+                )}
+                <button
+                  className="modal-action-button"
+                  onClick={() => handleDelete(expandedId, expandedDetail.title)}
+                  disabled={deleting === expandedId}
+                  title={t('history.item.deleteTitle')}
+                >
+                  <FontAwesomeIcon icon={faTrash} />
+                </button>
+                <button className="modal-close-text" onClick={closeDetailModal}>
+                  {t('history.item.close')}
+                </button>
+                <button className="modal-close" onClick={closeDetailModal}>×</button>
+              </div>
+            </div>
+            <div className="modal-body history-detail-modal-body">
+              {/* Keywords Display (read-only) */}
+              <div className="keywords-section">
+                <div className="keywords-header">
+                  <h4>{t('history.item.keywords')}</h4>
+                  {!editingId && (
+                    <button
+                      className="generate-keywords-button"
+                      onClick={() => handleGenerateKeywords(expandedId)}
+                      disabled={generatingKeywords === expandedId || !expandedDetail.transcript}
+                      title={t('history.item.generateKeywordsTitle')}
+                    >
+                      {generatingKeywords === expandedId ? t('history.item.generatingKeywords') : t('history.item.generateKeywords')}
+                    </button>
+                  )}
+                </div>
+                <div className="keywords-display">
+                  {parseKeywords(expandedDetail.keywords).length > 0 ? (
+                    parseKeywords(expandedDetail.keywords).map((keyword, idx) => (
+                      <span key={idx} className="keyword-tag">{keyword}</span>
+                    ))
+                  ) : (
+                    <span className="no-keywords">{t('history.item.noKeywords')}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Summary Display */}
+              {expandedDetail.summary && (
+                <div className="summary-section">
+                  <h4>{t('history.item.summary')}</h4>
+                  <div className="markdown-content summary-content">
+                    <ReactMarkdown
+                      components={{
+                        code({ node, inline, className, children, ...props }: any) {
+                          const match = /language-(\w+)/.exec(className || '')
+                          return !inline && match ? (
+                            <SyntaxHighlighter
+                              style={vscDarkPlus}
+                              language={match[1]}
+                              PreTag="div"
+                              {...props}
+                            >
+                              {String(children).replace(/\n$/, '')}
+                            </SyntaxHighlighter>
+                          ) : (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          )
+                        }
+                      }}
+                    >
+                      {expandedDetail.summary}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+
+              {/* Transcript/Markdown Content Display/Edit */}
+              <div className="transcript-section">
+                <div className="transcript-header">
+                  <h4>{t('history.item.content')}</h4>
+                  {!editingId && (
+                    <button
+                      className="edit-content-button"
+                      onClick={() => handleEdit(expandedId)}
+                    >
+                      {t('history.item.edit')}
+                    </button>
+                  )}
+                </div>
+                {editingId === expandedId ? (
+                  <div className="transcript-edit">
+                    <textarea
+                      value={editTranscript}
+                      onChange={(e) => setEditTranscript(e.target.value)}
+                      className="transcript-textarea"
+                      rows={25}
+                      placeholder={t('history.item.editPlaceholder')}
+                    />
+                    <div className="transcript-preview">
+                      <h5>{t('history.item.markdownPreview')}</h5>
+                      <div className="markdown-content">
+                        <ReactMarkdown
+                          components={{
+                            code({ node, inline, className, children, ...props }: any) {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return !inline && match ? (
+                                <SyntaxHighlighter
+                                  style={vscDarkPlus}
+                                  language={match[1]}
+                                  PreTag="div"
+                                  {...props}
+                                >
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              )
+                            }
+                          }}
+                        >
+                          {editTranscript || '暂无内容'}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                    <div className="edit-actions">
+                      <button
+                        className="save-button"
+                        onClick={() => handleSave(expandedId)}
+                        disabled={saving === expandedId}
+                      >
+                        {saving === expandedId ? t('history.item.saving') : t('history.item.save')}
+                      </button>
+                      <button
+                        className="cancel-button"
+                        onClick={handleCancelEdit}
+                        disabled={saving === expandedId}
+                      >
+                        {t('history.item.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="transcript-display">
+                    {expandedDetail.transcript ? (
+                      <div className="markdown-content">
+                        <ReactMarkdown
+                          components={{
+                            code({ node, inline, className, children, ...props }: any) {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return !inline && match ? (
+                                <SyntaxHighlighter
+                                  style={vscDarkPlus}
+                                  language={match[1]}
+                                  PreTag="div"
+                                  {...props}
+                                >
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              )
+                            },
+                            p: ({ children }: any) => {
+                              // Ensure paragraphs have proper spacing
+                              return <p style={{ marginBottom: '1rem', whiteSpace: 'pre-wrap' }}>{children}</p>
+                            },
+                            h1: ({ children }: any) => <h1 style={{ marginTop: '2rem', marginBottom: '1rem' }}>{children}</h1>,
+                            h2: ({ children }: any) => <h2 style={{ marginTop: '1.5rem', marginBottom: '0.75rem' }}>{children}</h2>,
+                            h3: ({ children }: any) => <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem' }}>{children}</h3>,
+                            h4: ({ children }: any) => <h4 style={{ marginTop: '1.25rem', marginBottom: '0.5rem' }}>{children}</h4>,
+                            ul: ({ children }: any) => <ul style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>{children}</ul>,
+                            ol: ({ children }: any) => <ol style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>{children}</ol>,
+                            li: ({ children }: any) => <li style={{ marginBottom: '0.25rem' }}>{children}</li>
+                          }}
+                        >
+                          {formatTextForMarkdown(expandedDetail.transcript)}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="no-transcript">{t('history.item.noContent')}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reprocessDialogOpen !== null && (
         <div className="modal-overlay" onClick={closeReprocessDialog}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>

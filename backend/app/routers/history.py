@@ -31,6 +31,17 @@ class HistoryItem(BaseModel):
     keywords: Optional[str]  # Comma-separated keywords
     upload_date: Optional[datetime]  # Video upload date from YouTube
     thumbnail_path: Optional[str]  # Path to thumbnail image
+    thumbnail_url: Optional[str]
+    source_video_id: Optional[str]
+    channel_id: Optional[str]
+    channel_title: Optional[str]
+    uploader_id: Optional[str]
+    uploader: Optional[str]
+    view_count: int
+    like_count: int
+    duration_seconds: int
+    downloaded_at: Optional[datetime]
+    read_count: int
     created_at: datetime
     
     class Config:
@@ -162,9 +173,47 @@ async def search_history_count(
     return {"count": count}
 
 
+@router.get("/batch", response_model=List[HistoryItem])
+async def get_history_batch(
+    ids: List[int] = Query(..., description="Video record ids (repeatable)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Fetch multiple history items by id (does NOT increment read_count).
+
+    This is used by "reading list" UIs that need title/date/keywords/summary
+    without counting as a read just to render a list.
+    """
+    uniq_ids = []
+    seen = set()
+    for i in ids:
+        try:
+            ii = int(i)
+        except Exception:
+            continue
+        if ii <= 0 or ii in seen:
+            continue
+        seen.add(ii)
+        uniq_ids.append(ii)
+
+    if not uniq_ids:
+        return []
+
+    records = (
+        db.query(VideoRecord)
+        .filter(VideoRecord.user_id == user.id, VideoRecord.id.in_(uniq_ids))
+        .all()
+    )
+    by_id = {r.id: r for r in records}
+    # Preserve requested order
+    return [by_id[i] for i in uniq_ids if i in by_id]
+
+
 @router.get("/{record_id}", response_model=HistoryDetail)
 async def get_history_detail(
     record_id: int,
+    count_read: bool = Query(False, description="Increment read_count when opening detail/summary"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -175,7 +224,35 @@ async def get_history_detail(
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="Video not found")
+    if count_read:
+        record.bump_read_count()
+        db.commit()
+        db.refresh(record)
     return record
+
+
+class ReadCountResponse(BaseModel):
+    read_count: int
+
+
+@router.post("/{record_id}/read", response_model=ReadCountResponse)
+async def increment_read_count(
+    record_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Increment read_count when a record is opened/read."""
+    record = db.query(VideoRecord).filter(
+        VideoRecord.id == record_id,
+        VideoRecord.user_id == user.id
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    record.read_count = int(record.read_count or 0) + 1
+    db.commit()
+    db.refresh(record)
+    return ReadCountResponse(read_count=record.read_count)
 
 
 @router.get("/{record_id}/export")

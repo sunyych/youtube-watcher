@@ -6,8 +6,18 @@ import HistoryPage from './components/HistoryPage'
 import Settings from './components/Settings'
 import PlaylistPage from './components/PlaylistPage'
 import VideoPlayer from './components/VideoPlayer'
+import PlaylistPlayerPage from './components/PlaylistPlayerPage'
+import PlaylistReadingPage from './components/PlaylistReadingPage'
+import TaskStatusPage from './components/TaskStatusPage'
 import './i18n/config'
 import './App.css'
+
+type Theme = 'light' | 'dark'
+
+function applyTheme(theme: Theme) {
+  document.documentElement.dataset.theme = theme
+  localStorage.setItem('theme', theme)
+}
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -17,6 +27,11 @@ function App() {
     // Check if user is authenticated
     const token = localStorage.getItem('token')
     setIsAuthenticated(!!token)
+
+    // Apply saved theme (default: light)
+    const savedTheme = (localStorage.getItem('theme') as Theme | null) ?? 'light'
+    applyTheme(savedTheme === 'dark' ? 'dark' : 'light')
+
     setLoading(false)
   }, [])
 
@@ -69,6 +84,16 @@ function App() {
           }
         />
         <Route
+          path="/tasks"
+          element={
+            isAuthenticated ? (
+              <TaskStatusPage onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
           path="/settings"
           element={
             isAuthenticated ? (
@@ -83,6 +108,36 @@ function App() {
           element={
             isAuthenticated ? (
               <PlaylistPage onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/playlist/:playlistId/play"
+          element={
+            isAuthenticated ? (
+              <PlaylistPlayerPage onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/playlist/:playlistId/play/:videoId"
+          element={
+            isAuthenticated ? (
+              <PlaylistPlayerPage onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/playlist/:playlistId/read"
+          element={
+            isAuthenticated ? (
+              <PlaylistReadingPage onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
             )

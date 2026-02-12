@@ -1,5 +1,5 @@
 """Video processing routes"""
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, HttpUrl
@@ -63,6 +63,40 @@ class VideoStatusResponse(BaseModel):
     progress: float
     queue_position: Optional[int]
     error_message: Optional[str]
+
+
+class RetryAllFailedResponse(BaseModel):
+    retried_count: int
+    record_ids: List[int]
+
+
+class TaskItemResponse(BaseModel):
+    id: int
+    url: str
+    title: Optional[str]
+    status: str
+    progress: float
+    error_message: Optional[str]
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    downloaded_at: Optional[str]
+    completed_at: Optional[str]
+
+
+class TaskListResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[TaskItemResponse]
+
+
+class BulkIdsRequest(BaseModel):
+    record_ids: List[int]
+
+
+class BulkActionResponse(BaseModel):
+    updated_count: int
+    record_ids: List[int]
 
 
 # Video processing is now handled by the independent queue worker service
@@ -151,6 +185,7 @@ async def process_video(
 @router.get("/status/{record_id}", response_model=VideoStatusResponse)
 async def get_video_status(
     record_id: int,
+    count_read: bool = Query(False, description="Increment read_count when opening the player"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -162,6 +197,9 @@ async def get_video_status(
     if not record:
         raise HTTPException(status_code=404, detail="Video not found")
     
+    if count_read:
+        record.bump_read_count()
+
     # Update queue position if pending
     if record.status == VideoStatus.PENDING:
         pending_count = db.query(VideoRecord).filter(
@@ -170,6 +208,8 @@ async def get_video_status(
             VideoRecord.id < record.id
         ).count()
         record.queue_position = pending_count + 1
+        db.commit()
+    elif count_read:
         db.commit()
     
     return VideoStatusResponse(
@@ -259,6 +299,168 @@ async def retry_video(
         queue_position=record.queue_position,
         error_message=record.error_message
     )
+
+
+@router.post("/retry-failed", response_model=RetryAllFailedResponse)
+async def retry_all_failed_videos(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Retry all FAILED videos for the current user."""
+    failed_records = db.query(VideoRecord).filter(
+        VideoRecord.user_id == user.id,
+        VideoRecord.status == VideoStatus.FAILED
+    ).order_by(VideoRecord.created_at.asc()).all()
+
+    record_ids = [r.id for r in failed_records]
+    if not record_ids:
+        return RetryAllFailedResponse(retried_count=0, record_ids=[])
+
+    for record in failed_records:
+        record.status = VideoStatus.PENDING
+        record.progress = 0.0
+        record.error_message = None
+
+    db.commit()
+    return RetryAllFailedResponse(retried_count=len(record_ids), record_ids=record_ids)
+
+
+@router.get("/tasks", response_model=TaskListResponse)
+async def list_tasks(
+    statuses: List[VideoStatus] = Query(..., description="Filter by one or more statuses"),
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List tasks by status (paginated) for the current user."""
+    limit = max(1, min(int(limit), 200))
+    skip = max(0, int(skip))
+
+    query = db.query(VideoRecord).filter(
+        VideoRecord.user_id == user.id,
+        VideoRecord.status.in_(statuses),
+    )
+    total = query.count()
+
+    records = (
+        query.order_by(VideoRecord.updated_at.desc().nullslast(), VideoRecord.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    def _dt(v):
+        return v.isoformat() if v else None
+
+    items = [
+        TaskItemResponse(
+            id=r.id,
+            url=r.url,
+            title=r.title,
+            status=r.status.value,
+            progress=float(r.progress or 0.0),
+            error_message=r.error_message,
+            created_at=_dt(r.created_at),
+            updated_at=_dt(r.updated_at),
+            downloaded_at=_dt(r.downloaded_at),
+            completed_at=_dt(r.completed_at),
+        )
+        for r in records
+    ]
+
+    return TaskListResponse(total=total, skip=skip, limit=limit, items=items)
+
+
+@router.post("/bulk/retry", response_model=BulkActionResponse)
+async def bulk_retry(
+    request: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Reset selected records to PENDING so the queue worker retries them."""
+    record_ids = sorted(set(int(x) for x in request.record_ids if x is not None))
+    if not record_ids:
+        return BulkActionResponse(updated_count=0, record_ids=[])
+
+    records = db.query(VideoRecord).filter(
+        VideoRecord.user_id == user.id,
+        VideoRecord.id.in_(record_ids),
+    ).all()
+
+    updated = []
+    for r in records:
+        # Do not retry already completed items
+        if r.status == VideoStatus.COMPLETED:
+            continue
+        r.status = VideoStatus.PENDING
+        r.progress = 0.0
+        r.error_message = None
+        r.queue_position = None
+        r.completed_at = None
+        updated.append(r.id)
+
+    db.commit()
+    return BulkActionResponse(updated_count=len(updated), record_ids=updated)
+
+
+@router.post("/bulk/restart-transcribe", response_model=BulkActionResponse)
+async def bulk_restart_transcribe(
+    request: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Restart transcription for selected records.
+    This clears transcript + summary and sets status to TRANSCRIBING.
+    """
+    record_ids = sorted(set(int(x) for x in request.record_ids if x is not None))
+    if not record_ids:
+        return BulkActionResponse(updated_count=0, record_ids=[])
+
+    records = db.query(VideoRecord).filter(
+        VideoRecord.user_id == user.id,
+        VideoRecord.id.in_(record_ids),
+    ).all()
+
+    for r in records:
+        r.transcript = None
+        r.transcript_file_path = None
+        r.summary = None
+        r.error_message = None
+        r.completed_at = None
+        r.status = VideoStatus.TRANSCRIBING
+        r.progress = max(float(r.progress or 0.0), 50.0)
+
+    db.commit()
+    return BulkActionResponse(updated_count=len(records), record_ids=[r.id for r in records])
+
+
+@router.post("/bulk/restart-summary", response_model=BulkActionResponse)
+async def bulk_restart_summary(
+    request: BulkIdsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Restart summarization only for selected records (keeps transcript)."""
+    record_ids = sorted(set(int(x) for x in request.record_ids if x is not None))
+    if not record_ids:
+        return BulkActionResponse(updated_count=0, record_ids=[])
+
+    records = db.query(VideoRecord).filter(
+        VideoRecord.user_id == user.id,
+        VideoRecord.id.in_(record_ids),
+    ).all()
+
+    for r in records:
+        r.summary = None
+        r.error_message = None
+        r.completed_at = None
+        r.status = VideoStatus.SUMMARIZING
+        r.progress = max(float(r.progress or 0.0), 95.0)
+
+    db.commit()
+    return BulkActionResponse(updated_count=len(records), record_ids=[r.id for r in records])
 
 
 @router.websocket("/progress/{record_id}")
@@ -426,19 +628,22 @@ async def stream_video(
     
     # Get file size
     file_size = video_path.stat().st_size
-    
+    if file_size == 0:
+        raise HTTPException(status_code=404, detail="Video file is empty")
+
     # Handle Range requests for video seeking
     range_header = request.headers.get('range')
-    
+
     if range_header:
-        # Parse range header
+        # Parse range header (e.g. "bytes=0-", "bytes=0-1023", "bytes=100-500")
         range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
         if range_match:
             start = int(range_match.group(1))
             end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
-            
+            end = min(end, file_size - 1)
+
             # Validate range
-            if start >= file_size or end >= file_size or start > end:
+            if start > end or start >= file_size:
                 return Response(
                     status_code=416,
                     headers={"Content-Range": f"bytes */{file_size}"}
@@ -469,18 +674,30 @@ async def stream_video(
                 media_type=content_type
             )
     
-    # Return full file if no range request
+    # No Range header: return first chunk only (206) so browser gets metadata quickly
+    # and can request more ranges as needed. Avoids sending entire file for long videos.
+    INITIAL_CHUNK_BYTES = 2 * 1024 * 1024  # 2 MB
+    start = 0
+    end = min(INITIAL_CHUNK_BYTES - 1, file_size - 1) if file_size else 0
+    chunk_size = end - start + 1
+
     content_type = "video/mp4"
     if video_path.suffix == '.webm':
         content_type = "video/webm"
     elif video_path.suffix == '.mkv':
         content_type = "video/x-matroska"
-    
-    return FileResponse(
-        path=str(video_path),
-        media_type=content_type,
+
+    with open(video_path, 'rb') as f:
+        chunk = f.read(chunk_size)
+
+    return Response(
+        content=chunk,
+        status_code=206,
         headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-        }
+            "Content-Length": str(chunk_size),
+            "Content-Type": content_type,
+        },
+        media_type=content_type,
     )

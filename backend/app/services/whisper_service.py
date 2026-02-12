@@ -6,10 +6,12 @@ except ImportError:
     FASTER_WHISPER_AVAILABLE = False
     WhisperModel = None
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import logging
 import os
 import platform
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -155,3 +157,84 @@ class WhisperService:
         except Exception as e:
             logger.error(f"Error transcribing audio: {e}")
             raise Exception(f"Transcription failed: {str(e)}")
+
+    def transcribe_segments(
+        self,
+        audio_chunks: List[np.ndarray],
+        chunk_metadata: List[Dict[str, Any]],
+        language: Optional[str] = None,
+        task: str = "transcribe",
+        beam_size: int = 5,
+        best_of: int = 5,
+        temperature: float = 0.0,
+        progress_callback=None,
+        sample_rate: int = 16000,
+    ) -> Dict[str, Any]:
+        """
+        Transcribe pre-sliced audio chunks (from VAD pipeline) and merge with global timestamps.
+
+        Args:
+            audio_chunks: List of float32 mono numpy arrays (each chunk).
+            chunk_metadata: List of dicts with "offset" (sec), "duration" (sec), "segments".
+            language: Language code; if None, auto-detect from first chunk.
+            progress_callback: Optional callback(seconds) for progress.
+            sample_rate: Sample rate of the chunks (e.g. 16000).
+
+        Returns:
+            Dict with "text", "language", "language_probability", "segments" (global timestamps).
+        """
+        if not audio_chunks or not chunk_metadata:
+            return {
+                "text": "",
+                "language": language or "unknown",
+                "language_probability": 0.0,
+                "segments": [],
+            }
+        if len(audio_chunks) != len(chunk_metadata):
+            raise ValueError("audio_chunks and chunk_metadata must have same length")
+
+        full_text_parts = []
+        all_segments = []
+        detected_language = language
+        language_probability = 0.0
+
+        for idx, (chunk_audio, meta) in enumerate(zip(audio_chunks, chunk_metadata)):
+            offset_sec = float(meta.get("offset", 0))
+            duration_sec = float(meta.get("duration", 0))
+
+            # transcribe accepts path or numpy array (float32 mono)
+            segments_iter, info = self.model.transcribe(
+                chunk_audio,
+                language=language,
+                task=task,
+                beam_size=beam_size,
+                best_of=best_of,
+                temperature=temperature,
+                vad_filter=False,
+            )
+
+            if idx == 0:
+                detected_language = info.language
+                language_probability = getattr(info, "language_probability", 0.0) or 0.0
+
+            for segment in segments_iter:
+                seg_text = segment.text.strip()
+                if seg_text:
+                    global_start = offset_sec + segment.start
+                    global_end = offset_sec + segment.end
+                    full_text_parts.append(seg_text)
+                    all_segments.append({
+                        "start": global_start,
+                        "end": global_end,
+                        "text": seg_text,
+                    })
+                    if progress_callback:
+                        progress_callback(global_end)
+
+        full_text = " ".join(full_text_parts).strip()
+        return {
+            "text": full_text,
+            "language": detected_language or language or "unknown",
+            "language_probability": language_probability,
+            "segments": all_segments,
+        }

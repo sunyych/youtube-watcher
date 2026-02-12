@@ -1,16 +1,19 @@
 # Frontend Dockerfile
 FROM node:20-alpine as build
 
-WORKDIR /app
+WORKDIR /app/frontend
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* ./
 
 # Install dependencies
 RUN npm install
 
-# Copy source code
-COPY . .
+# Copy frontend source code
+COPY frontend/ .
+
+# Copy extension package from repo root (so postbuild can include it)
+COPY chrome-extension.crx /app/chrome-extension.crx
 
 # Build application
 RUN npm run build
@@ -19,10 +22,10 @@ RUN npm run build
 FROM nginx:alpine
 
 # Copy built files
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
 
 # Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

@@ -50,6 +50,7 @@
     "title": "History",
     "nav": {
       "home": "Home",
+      "tasks": "Tasks",
       "playlist": "Playlist",
       "settings": "Settings",
       "logout": "Logout"
@@ -73,7 +74,27 @@
       "noTranscript": "No transcript/summary",
       "withSummary": "With summary"
     },
+    "view": {
+      "label": "View",
+      "compact": "Compact",
+      "standard": "Standard"
+    },
+    "sort": {
+      "label": "Sort",
+      "dateDesc": "By date (new → old)",
+      "dateAsc": "By date (old → new)",
+      "readDesc": "By reads (high → low)",
+      "titleAsc": "By title (A → Z)"
+    },
+    "filter": {
+      "unreadOnly": "Unread only"
+    },
     "item": {
+      "close": "Close",
+      "readCount": "Read {{count}}",
+      "readCountTitle": "Read count",
+      "previous": "Previous",
+      "next": "Next",
       "keywords": "Keywords:",
       "noKeywords": "No keywords",
       "summary": "Summary:",
@@ -147,6 +168,19 @@
     "deletePlaylistConfirmNoName": "Are you sure you want to delete this playlist? This will remove all videos in it.",
     "deleteSuccess": "Playlist deleted successfully",
     "deleteFailed": "Failed to delete playlist",
+    "openPlayer": "Open playlist player",
+    "openReading": "Open reading list",
+    "reading": {
+      "title": "Reading",
+      "list": "Reading list",
+      "noKeywords": "No keywords",
+      "noSummary": "No summary",
+      "openDetail": "Open detail"
+    },
+    "backToPlaylist": "Back to playlist",
+    "playlist": "Playlist",
+    "hidePlaylist": "Hide playlist",
+    "showPlaylist": "Show playlist",
     "play": "Play",
     "remove": "Remove",
     "removeConfirm": "Are you sure you want to remove this video from the playlist?",
@@ -167,6 +201,11 @@
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
     "selectedCount": "{{count}} selected",
+    "searchPlaceholder": "Search title / URL / keywords...",
+    "clearSearch": "Clear",
+    "noSearchResults": "No matching videos",
+    "unassigned": "Not in any playlist",
+    "unassignedHint": "Show videos not in any playlist",
     "addSelected": "Add Selected ({{count}})",
     "noVideosSelected": "Please select videos first",
     "addSelectedSuccess": "Successfully added {{count}} videos",
@@ -182,6 +221,11 @@
     "videoNotReady": "Video is not ready yet",
     "loadFailed": "Failed to load video",
     "goBack": "Go back",
+    "play": "Play",
+    "pause": "Pause",
+    "seek": "Seek",
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen",
     "previous": "Previous",
     "next": "Next"
   },
@@ -190,7 +234,13 @@
     "nav": {
       "home": "Home",
       "history": "History",
+      "tasks": "Tasks",
       "logout": "Logout"
+    },
+    "extension": {
+      "title": "Chrome Extension",
+      "note": "Click the link below to download the extension package (.crx).",
+      "download": "Download chrome-extension.crx"
     },
     "password": {
       "title": "Password Settings",
@@ -214,6 +264,19 @@
       "description": "Select your preferred language",
       "english": "English",
       "chinese": "中文"
+    },
+    "theme": {
+      "title": "Appearance",
+      "description": "Choose light or dark theme",
+      "dark": "Dark theme"
+    },
+    "summaryLanguage": {
+      "title": "Summary language",
+      "description": "Video summaries will be generated in this language. Default: Chinese.",
+      "chinese": "中文",
+      "english": "English",
+      "saving": "Saving...",
+      "saved": "Saved"
     }
   },
   "queue": {

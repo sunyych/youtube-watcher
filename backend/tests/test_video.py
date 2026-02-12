@@ -22,13 +22,14 @@ def test_process_video_request(authenticated_client: TestClient):
     assert "status" in data
 
 
-def test_get_video_status(authenticated_client: TestClient, db):
+def test_get_video_status(authenticated_client: TestClient, db, test_user):
     """Test getting video status"""
     from app.models.database import VideoRecord, VideoStatus
     
     # Create a test record
     record = VideoRecord(
         url="https://www.youtube.com/watch?v=test",
+        user_id=test_user.id,
         status=VideoStatus.PENDING,
         progress=0.0
     )

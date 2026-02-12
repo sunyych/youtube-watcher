@@ -31,6 +31,12 @@ const Header: React.FC<HeaderProps> = ({ title, onLogout }) => {
           {t('history.title')}
         </Link>
         <Link 
+          to="/tasks" 
+          className={location.pathname === '/tasks' ? 'active' : ''}
+        >
+          {t('history.nav.tasks', 'Tasks')}
+        </Link>
+        <Link 
           to="/playlist" 
           className={location.pathname === '/playlist' ? 'active' : ''}
         >

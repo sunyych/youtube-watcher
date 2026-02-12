@@ -550,12 +550,7 @@ VITE_API_URL=http://your-public-ip:8000
 docker compose exec backend pip install --upgrade yt-dlp
 ```
 
-2. **使用 cookies 文件**（推荐）
-   - 从浏览器导出 cookies
-   - 保存为 `cookies.txt` 在项目根目录
-   - 修改 `video_downloader.py` 使用 cookies
-
-3. **尝试其他视频**：某些视频可能有访问限制
+2. **尝试其他视频**：某些视频可能有访问限制
 
 ### Docker 构建失败
 

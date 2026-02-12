@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "node scripts/copy-extension-crx.mjs",
     "build": "tsc && vite build",
+    "postbuild": "node scripts/copy-extension-crx.mjs",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"

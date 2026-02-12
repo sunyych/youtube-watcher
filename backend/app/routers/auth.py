@@ -34,6 +34,10 @@ class LoginResponse(BaseModel):
     username: str
 
 
+class AuthConfigResponse(BaseModel):
+    allow_registration: bool
+
+
 def _truncate_password(password: str) -> bytes:
     """Truncate password to 72 bytes for bcrypt compatibility"""
     password_bytes = password.encode('utf-8')
@@ -92,6 +96,12 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 @router.post("/register", response_model=LoginResponse)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user"""
+    if not settings.allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled"
+        )
+
     # Check if username already exists
     existing_user = db.query(User).filter(User.username == request.username).first()
     if existing_user:
@@ -117,6 +127,12 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         user_id=user.id,
         username=user.username
     )
+
+
+@router.get("/config", response_model=AuthConfigResponse)
+async def get_auth_config():
+    """Expose auth-related configuration to frontend."""
+    return AuthConfigResponse(allow_registration=settings.allow_registration)
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -179,6 +195,40 @@ async def get_current_user(
 
 class ChangeUsernameRequest(BaseModel):
     new_username: str
+
+
+class UserProfileResponse(BaseModel):
+    user_id: int
+    username: str
+    summary_language: str
+
+
+class UpdateSummaryLanguageRequest(BaseModel):
+    summary_language: str
+
+
+@router.get("/profile", response_model=UserProfileResponse)
+async def get_profile(user: User = Depends(get_current_user)):
+    """Get current user profile including summary language preference."""
+    return UserProfileResponse(
+        user_id=user.id,
+        username=user.username,
+        summary_language=user.summary_language or "中文",
+    )
+
+
+@router.patch("/settings/summary-language")
+async def update_summary_language(
+    request: UpdateSummaryLanguageRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update user's preferred summary language (e.g. 中文, English)."""
+    lang = (request.summary_language or "中文").strip()
+    user.summary_language = lang
+    db.commit()
+    db.refresh(user)
+    return {"summary_language": user.summary_language}
 
 
 @router.post("/change-password")

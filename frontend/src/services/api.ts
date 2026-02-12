@@ -55,6 +55,10 @@ export interface LoginResponse {
   username: string
 }
 
+export interface AuthConfigResponse {
+  allow_registration: boolean
+}
+
 export interface ProcessVideoRequest {
   url: string
   language?: string
@@ -80,6 +84,17 @@ export interface HistoryItem {
   keywords?: string  // Comma-separated keywords
   upload_date?: string  // Video upload date from YouTube
   thumbnail_path?: string  // Path to thumbnail image
+  thumbnail_url?: string
+  source_video_id?: string
+  channel_id?: string
+  channel_title?: string
+  uploader_id?: string
+  uploader?: string
+  view_count?: number
+  like_count?: number
+  duration_seconds?: number
+  downloaded_at?: string
+  read_count?: number
   created_at: string
 }
 
@@ -105,6 +120,26 @@ export interface QueueStatus {
   }>
 }
 
+export interface TaskItem {
+  id: number
+  url: string
+  title?: string
+  status: string
+  progress: number
+  error_message?: string
+  created_at?: string
+  updated_at?: string
+  downloaded_at?: string
+  completed_at?: string
+}
+
+export interface TaskListResponse {
+  total: number
+  skip: number
+  limit: number
+  items: TaskItem[]
+}
+
 export interface ChangePasswordRequest {
   old_password: string
   new_password: string
@@ -120,9 +155,32 @@ export interface ChangeUsernameResponse {
   new_username: string
 }
 
+export interface UserProfileResponse {
+  user_id: number
+  username: string
+  summary_language: string
+}
+
 export const authApi = {
+  getProfile: async (): Promise<UserProfileResponse> => {
+    const response = await api.get<UserProfileResponse>('/api/auth/profile')
+    return response.data
+  },
+
+  updateSummaryLanguage: async (summaryLanguage: string): Promise<{ summary_language: string }> => {
+    const response = await api.patch<{ summary_language: string }>('/api/auth/settings/summary-language', {
+      summary_language: summaryLanguage,
+    })
+    return response.data
+  },
+
   login: async (username: string, password: string): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/api/auth/login', { username, password })
+    return response.data
+  },
+
+  getConfig: async (): Promise<AuthConfigResponse> => {
+    const response = await api.get<AuthConfigResponse>('/api/auth/config')
     return response.data
   },
   
@@ -153,8 +211,10 @@ export const videoApi = {
     return response.data
   },
   
-  getStatus: async (id: number): Promise<VideoStatus> => {
-    const response = await api.get<VideoStatus>(`/api/video/status/${id}`)
+  getStatus: async (id: number, opts?: { countRead?: boolean }): Promise<VideoStatus> => {
+    const response = await api.get<VideoStatus>(`/api/video/status/${id}`, {
+      params: opts?.countRead ? { count_read: true } : undefined,
+    })
     return response.data
   },
   
@@ -165,6 +225,44 @@ export const videoApi = {
   
   retry: async (id: number): Promise<VideoStatus> => {
     const response = await api.post<VideoStatus>(`/api/video/retry/${id}`)
+    return response.data
+  },
+
+  getTasks: async (statuses: string[], skip = 0, limit = 50): Promise<TaskListResponse> => {
+    const response = await api.get<TaskListResponse>('/api/video/tasks', {
+      params: { statuses, skip, limit },
+      paramsSerializer: (params) => {
+        // Ensure arrays are sent as repeated query params: statuses=pending&statuses=converting
+        const usp = new URLSearchParams()
+        ;(params.statuses || []).forEach((s: string) => usp.append('statuses', s))
+        usp.set('skip', String(params.skip ?? 0))
+        usp.set('limit', String(params.limit ?? 50))
+        return usp.toString()
+      },
+    })
+    return response.data
+  },
+
+  bulkRetry: async (recordIds: number[]): Promise<{ updated_count: number; record_ids: number[] }> => {
+    const response = await api.post<{ updated_count: number; record_ids: number[] }>('/api/video/bulk/retry', {
+      record_ids: recordIds,
+    })
+    return response.data
+  },
+
+  bulkRestartTranscribe: async (recordIds: number[]): Promise<{ updated_count: number; record_ids: number[] }> => {
+    const response = await api.post<{ updated_count: number; record_ids: number[] }>(
+      '/api/video/bulk/restart-transcribe',
+      { record_ids: recordIds }
+    )
+    return response.data
+  },
+
+  bulkRestartSummary: async (recordIds: number[]): Promise<{ updated_count: number; record_ids: number[] }> => {
+    const response = await api.post<{ updated_count: number; record_ids: number[] }>(
+      '/api/video/bulk/restart-summary',
+      { record_ids: recordIds }
+    )
     return response.data
   },
   
@@ -200,9 +298,29 @@ export const historyApi = {
     return response.data.count
   },
   
-  getDetail: async (id: number): Promise<HistoryDetail> => {
-    const response = await api.get<HistoryDetail>(`/api/history/${id}`)
+  getDetail: async (id: number, opts?: { countRead?: boolean }): Promise<HistoryDetail> => {
+    const response = await api.get<HistoryDetail>(`/api/history/${id}`, {
+      params: opts?.countRead ? { count_read: true } : undefined,
+    })
     return response.data
+  },
+
+  getBatch: async (ids: number[]): Promise<HistoryItem[]> => {
+    const response = await api.get<HistoryItem[]>('/api/history/batch', {
+      params: { ids },
+      paramsSerializer: (params) => {
+        // ids=1&ids=2...
+        const usp = new URLSearchParams()
+        ;(params.ids || []).forEach((id: number) => usp.append('ids', String(id)))
+        return usp.toString()
+      },
+    })
+    return response.data
+  },
+
+  incrementReadCount: async (id: number): Promise<number> => {
+    const response = await api.post<{ read_count: number }>(`/api/history/${id}/read`)
+    return response.data.read_count
   },
   
   updateHistory: async (id: number, data: UpdateHistoryRequest): Promise<HistoryDetail> => {
