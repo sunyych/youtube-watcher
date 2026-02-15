@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
 from pathlib import Path
+from datetime import datetime, timezone
 import json
 import asyncio
 import logging
@@ -63,6 +64,7 @@ class VideoStatusResponse(BaseModel):
     progress: float
     queue_position: Optional[int]
     error_message: Optional[str]
+    watch_position_seconds: Optional[float] = None
 
 
 class RetryAllFailedResponse(BaseModel):
@@ -88,6 +90,10 @@ class TaskListResponse(BaseModel):
     skip: int
     limit: int
     items: List[TaskItemResponse]
+
+
+class WatchPositionRequest(BaseModel):
+    position_seconds: float
 
 
 class BulkIdsRequest(BaseModel):
@@ -145,7 +151,8 @@ async def process_video(
             status=existing_record.status.value,
             progress=existing_record.progress,
             queue_position=existing_record.queue_position,
-            error_message=existing_record.error_message
+            error_message=existing_record.error_message,
+            watch_position_seconds=existing_record.watch_position_seconds,
         )
     
     # Create new record with PENDING status - queue worker will pick it up
@@ -178,7 +185,8 @@ async def process_video(
         status=record.status.value,
         progress=record.progress,
         queue_position=record.queue_position,
-        error_message=record.error_message
+        error_message=record.error_message,
+        watch_position_seconds=record.watch_position_seconds,
     )
 
 
@@ -219,8 +227,30 @@ async def get_video_status(
         status=record.status.value,
         progress=record.progress,
         queue_position=record.queue_position,
-        error_message=record.error_message
+        error_message=record.error_message,
+        watch_position_seconds=record.watch_position_seconds,
     )
+
+
+@router.put("/status/{record_id}/watch-position")
+async def save_watch_position(
+    record_id: int,
+    body: WatchPositionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Save playback position for the current user (for resume across devices)."""
+    record = db.query(VideoRecord).filter(
+        VideoRecord.id == record_id,
+        VideoRecord.user_id == user.id
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Video not found")
+    position = max(0.0, float(body.position_seconds))
+    record.watch_position_seconds = position
+    record.watch_updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"position_seconds": position}
 
 
 @router.get("/queue")
@@ -297,7 +327,8 @@ async def retry_video(
         status=record.status.value,
         progress=record.progress,
         queue_position=record.queue_position,
-        error_message=record.error_message
+        error_message=record.error_message,
+        watch_position_seconds=record.watch_position_seconds,
     )
 
 

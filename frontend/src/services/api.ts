@@ -72,6 +72,7 @@ export interface VideoStatus {
   progress: number
   queue_position?: number
   error_message?: string
+  watch_position_seconds?: number
 }
 
 export interface HistoryItem {
@@ -216,6 +217,12 @@ export const videoApi = {
       params: opts?.countRead ? { count_read: true } : undefined,
     })
     return response.data
+  },
+
+  saveWatchPosition: async (recordId: number, positionSeconds: number): Promise<void> => {
+    await api.put(`/api/video/status/${recordId}/watch-position`, {
+      position_seconds: positionSeconds,
+    })
   },
   
   getQueue: async (): Promise<QueueStatus> => {

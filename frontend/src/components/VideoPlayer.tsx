@@ -29,6 +29,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const fullscreenTargetRef = useRef<HTMLDivElement>(null)
+  const initialPositionRef = useRef<number | null>(null)
+  const lastSavedPositionRef = useRef<number>(0)
+  const savePositionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [videoInfo, setVideoInfo] = useState<any>(null)
   const [playlistItems, setPlaylistItems] = useState<PlaylistItemResponse[]>([])
   const [currentIndex, setCurrentIndex] = useState(-1)
@@ -73,14 +76,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
     }
   }, [playlistItems, videoId, from])
 
+  useEffect(() => {
+    return () => {
+      if (savePositionTimeoutRef.current) clearTimeout(savePositionTimeoutRef.current)
+    }
+  }, [])
+
   const loadVideo = async (id: number) => {
     setLoading(true)
     setError(null)
+    initialPositionRef.current = null
     try {
       // Count as a "read" when opening the player
       const status = await videoApi.getStatus(id, { countRead: true })
       setVideoInfo(status)
-      
+      const saved = status.watch_position_seconds
+      if (typeof saved === 'number' && saved > 0) {
+        initialPositionRef.current = saved
+      }
       // Allow playback while processing (e.g. converting/transcribing/summarizing) as long as stream is available.
       if (!isPlayableStatus(status.status)) {
         setError(t('player.videoNotReady'))
@@ -114,14 +127,37 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
   }
 
   const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime)
-    }
+    const video = videoRef.current
+    if (!video) return
+    const t = video.currentTime
+    setCurrentTime(t)
+    // Debounced save every 10s so progress is synced if user closes tab without pausing
+    if (savePositionTimeoutRef.current) clearTimeout(savePositionTimeoutRef.current)
+    savePositionTimeoutRef.current = setTimeout(() => {
+      savePositionTimeoutRef.current = null
+      if (Math.abs(t - lastSavedPositionRef.current) > 2) savePosition(t)
+    }, 10000)
+  }
+
+  const savePosition = (position: number) => {
+    if (!videoId || position < 0) return
+    const id = parseInt(videoId, 10)
+    if (Number.isNaN(id)) return
+    lastSavedPositionRef.current = position
+    videoApi.saveWatchPosition(id, position).catch((err) => {
+      console.warn('Failed to save watch position:', err)
+    })
   }
 
   const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration)
+    const video = videoRef.current
+    if (!video) return
+    setDuration(video.duration)
+    const start = initialPositionRef.current
+    if (typeof start === 'number' && start > 0 && start < (video.duration || Infinity)) {
+      video.currentTime = start
+      setCurrentTime(start)
+      initialPositionRef.current = null
     }
   }
 
@@ -280,7 +316,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = () => {
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
             onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
+            onPause={() => {
+              setIsPlaying(false)
+              if (videoRef.current && videoId) {
+                const t = videoRef.current.currentTime
+                if (t >= 0) savePosition(t)
+              }
+            }}
             onEnded={() => {
               setIsPlaying(false)
               if (from === 'playlist' && canPlayNext) {
