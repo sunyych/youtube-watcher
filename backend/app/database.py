@@ -37,8 +37,9 @@ logger = logging.getLogger(__name__)
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20
+    pool_size=15,
+    max_overflow=35,
+    pool_recycle=1800,  # recycle connections after 30 min (queue worker holds sessions during long tasks)
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

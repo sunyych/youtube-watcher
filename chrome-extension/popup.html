@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Watcher</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="title">YouTube Watcher</div>
+        <div class="subtitle">Backend download for YouTube · Tab recording for other sites</div>
+      </header>
+
+      <section class="card">
+        <div class="card-title">Backend</div>
+        <div id="backendFields">
+          <div class="row">
+            <label class="label" for="baseUrl">Base URL</label>
+            <input id="baseUrl" class="input" placeholder="http://localhost:8000" />
+          </div>
+          <div class="row">
+            <label class="label" for="username">Username</label>
+            <input id="username" class="input" autocomplete="username" />
+          </div>
+          <div class="row">
+            <label class="label" for="password">Password</label>
+            <input id="password" class="input" type="password" autocomplete="current-password" />
+          </div>
+        </div>
+        <div class="row actions">
+          <button id="btnLogin" class="btn primary">Login</button>
+          <button id="btnLogout" class="btn">Logout</button>
+          <a id="backendOptionsLink" class="link" href="options.html" target="_blank" rel="noreferrer">Options</a>
+        </div>
+        <div id="authStatus" class="status"></div>
+      </section>
+
+      <section class="card" id="channelSubscribeCard" style="display: none">
+        <div class="card-title">Channel subscription</div>
+        <p class="card-desc">Subscribe to this channel: new videos will be auto-downloaded twice daily.</p>
+        <div class="row actions">
+          <button id="btnSubscribeChannel" class="btn primary">Subscribe</button>
+        </div>
+        <div id="subscribeStatus" class="status"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">YouTube</div>
+        <div class="row actions">
+          <button id="btnSendCurrentTab" class="btn primary" style="display: none">Send current tab</button>
+          <button id="btnScan" class="btn">Scan this page</button>
+          <button id="btnSendSelected" class="btn primary">Send selected</button>
+        </div>
+        <div id="ytInfo" class="status"></div>
+        <div id="videoList" class="list"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">Recording (other sites)</div>
+        <div class="row actions">
+          <button id="btnStartRec" class="btn primary">Start recording tab</button>
+          <button id="btnStopRec" class="btn">Stop & save</button>
+        </div>
+        <div id="recStatus" class="status"></div>
+      </section>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ import VideoPlayer from './components/VideoPlayer'
 import PlaylistPlayerPage from './components/PlaylistPlayerPage'
 import PlaylistReadingPage from './components/PlaylistReadingPage'
 import TaskStatusPage from './components/TaskStatusPage'
+import SubscriptionsPage from './components/SubscriptionsPage'
 import './i18n/config'
 import './App.css'
 
@@ -98,6 +99,16 @@ function App() {
           element={
             isAuthenticated ? (
               <Settings onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/subscriptions"
+          element={
+            isAuthenticated ? (
+              <SubscriptionsPage onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
             )

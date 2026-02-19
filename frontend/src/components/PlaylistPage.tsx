@@ -45,6 +45,9 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
   const [videoSearch, setVideoSearch] = useState('')
   const [assignedVideoIds, setAssignedVideoIds] = useState<Set<number>>(new Set())
   const [loadingAssigned, setLoadingAssigned] = useState(false)
+  const [selectedPlaylistItemIds, setSelectedPlaylistItemIds] = useState<Set<number>>(new Set())
+  const [lastSelectedPlaylistItemIndex, setLastSelectedPlaylistItemIndex] = useState<number | null>(null)
+  const [lastSelectedVideoIndex, setLastSelectedVideoIndex] = useState<number | null>(null)
 
   useEffect(() => {
     loadPlaylists(true)
@@ -63,6 +66,8 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
       setItems([])
       setLoadingItems(false)
     }
+    setSelectedPlaylistItemIds(new Set())
+    setLastSelectedPlaylistItemIndex(null)
   }, [selectedPlaylistId])
 
   const refreshAssignedVideoIds = async (pls?: PlaylistResponse[]) => {
@@ -263,16 +268,75 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     }
   }
 
-  const handleVideoSelect = (videoId: number, checked: boolean) => {
-    setSelectedVideoIds(prev => {
-      const newSet = new Set(prev)
-      if (checked) {
-        newSet.add(videoId)
-      } else {
-        newSet.delete(videoId)
+  const handleVideoSelectByIndex = (index: number, shiftKey: boolean) => {
+    const list = filteredSourceVideos
+    if (index < 0 || index >= list.length) return
+    if (shiftKey && lastSelectedVideoIndex !== null) {
+      const lo = Math.min(lastSelectedVideoIndex, index)
+      const hi = Math.max(lastSelectedVideoIndex, index)
+      setSelectedVideoIds(prev => {
+        const next = new Set(prev)
+        for (let i = lo; i <= hi; i++) next.add(list[i].id)
+        return next
+      })
+    } else {
+      const videoId = list[index].id
+      const currentlySelected = selectedVideoIds.has(videoId)
+      setSelectedVideoIds(prev => {
+        const next = new Set(prev)
+        if (currentlySelected) next.delete(videoId)
+        else next.add(videoId)
+        return next
+      })
+      setLastSelectedVideoIndex(index)
+    }
+  }
+
+  const handlePlaylistItemSelect = (itemId: number, index: number, shiftKey: boolean) => {
+    if (shiftKey && lastSelectedPlaylistItemIndex !== null) {
+      const lo = Math.min(lastSelectedPlaylistItemIndex, index)
+      const hi = Math.max(lastSelectedPlaylistItemIndex, index)
+      setSelectedPlaylistItemIds(prev => {
+        const next = new Set(prev)
+        for (let i = lo; i <= hi; i++) next.add(items[i].id)
+        return next
+      })
+    } else {
+      const currentlySelected = selectedPlaylistItemIds.has(itemId)
+      setSelectedPlaylistItemIds(prev => {
+        const next = new Set(prev)
+        if (currentlySelected) next.delete(itemId)
+        else next.add(itemId)
+        return next
+      })
+      setLastSelectedPlaylistItemIndex(index)
+    }
+  }
+
+  const handleRemoveSelectedPlaylistItems = async () => {
+    if (selectedPlaylistItemIds.size === 0) return
+    if (!window.confirm(t('playlist.removeSelectedConfirm', { count: selectedPlaylistItemIds.size }))) return
+    setRemoving(-1)
+    try {
+      let failCount = 0
+      for (const itemId of selectedPlaylistItemIds) {
+        try {
+          await playlistApi.removeItem(itemId)
+        } catch {
+          failCount++
+        }
       }
-      return newSet
-    })
+      setSelectedPlaylistItemIds(new Set())
+      setLastSelectedPlaylistItemIndex(null)
+      if (selectedPlaylistId !== null) await loadPlaylistItems(selectedPlaylistId)
+      refreshAssignedVideoIds()
+      if (failCount > 0) alert(t('playlist.removeSelectedPartial', { fail: failCount }))
+    } catch (err) {
+      console.error('Failed to remove selected:', err)
+      alert(t('playlist.removeFailed'))
+    } finally {
+      setRemoving(null)
+    }
   }
 
   const unassignedVideos = useMemo(() => {
@@ -555,6 +619,17 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                   {playlists.find(p => p.id === selectedPlaylistId)?.name || t('playlist.title')}
                 </h4>
                 <div className="playlist-items-actions">
+                  {selectedPlaylistItemIds.size > 0 && (
+                    <button
+                      type="button"
+                      className="remove-selected-button"
+                      onClick={handleRemoveSelectedPlaylistItems}
+                      disabled={removing !== null}
+                      title={t('playlist.removeSelected')}
+                    >
+                      {t('playlist.removeSelected')} ({selectedPlaylistItemIds.size})
+                    </button>
+                  )}
                   <button
                     className="open-playlist-player-button"
                     onClick={handleOpenPlaylistPlayer}
@@ -590,7 +665,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                   {items.map((item, index) => (
                     <div
                       key={item.id}
-                      className={`playlist-item ${draggedItemId === item.id ? 'dragging' : ''} ${dragOverItemIndex === index ? 'drag-over' : ''}`}
+                      className={`playlist-item ${selectedPlaylistItemIds.has(item.id) ? 'selected' : ''} ${draggedItemId === item.id ? 'dragging' : ''} ${dragOverItemIndex === index ? 'drag-over' : ''}`}
                       draggable
                       onDragStart={(e) => handleItemDragStart(e, item.id)}
                       onDragEnd={handleItemDragEnd}
@@ -598,6 +673,17 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                       onDragLeave={handleItemDragLeave}
                       onDrop={(e) => handleItemDrop(e, index)}
                     >
+                      <input
+                        type="checkbox"
+                        className="playlist-item-checkbox"
+                        checked={selectedPlaylistItemIds.has(item.id)}
+                        onChange={() => {}}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handlePlaylistItemSelect(item.id, index, e.nativeEvent.shiftKey)
+                        }}
+                        aria-label={t('playlist.selectItem', '选择')}
+                      />
                       <div className="playlist-item-drag-handle">
                         <FontAwesomeIcon icon={faGripVertical} />
                       </div>
@@ -625,7 +711,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                         <button
                           className="remove-button"
                           onClick={() => handleRemove(item.id)}
-                          disabled={removing === item.id}
+                          disabled={removing === item.id || removing === -1}
                           title={t('playlist.remove')}
                         >
                           <FontAwesomeIcon icon={faTrash} />
@@ -688,7 +774,7 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
               <div className="empty-state">{t('playlist.noSearchResults', '没有匹配的视频')}</div>
             ) : (
               <div className="videos-list">
-                {filteredSourceVideos.map((video) => (
+                {filteredSourceVideos.map((video, index) => (
                   <div
                     key={video.id}
                     className={`video-item ${selectedVideoIds.has(video.id) ? 'selected' : ''} ${draggedVideoIds.has(video.id) ? 'dragging' : ''}`}
@@ -700,9 +786,12 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                       type="checkbox"
                       aria-label={`${t('playlist.selectVideo', '选择视频')} ${video.id}`}
                       checked={selectedVideoIds.has(video.id)}
-                      onChange={(e) => handleVideoSelect(video.id, e.target.checked)}
                       className="video-checkbox"
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleVideoSelectByIndex(index, e.nativeEvent.shiftKey)
+                      }}
+                      onChange={() => {}}
                     />
                     <div className="video-item-info">
                       <h4>{video.title || video.url}</h4>

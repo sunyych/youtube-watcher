@@ -27,7 +27,7 @@ interface HistoryPageProps {
 const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  type HistoryTab = 'noSummary' | 'withSummary'
+  type HistoryTab = 'noSummary' | 'withSummary' | 'fromSubscription'
   type HistoryDisplayMode = 'compact' | 'standard'
   type HistorySort = 'dateDesc' | 'dateAsc' | 'readDesc' | 'titleAsc'
 
@@ -91,10 +91,11 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     try {
       const pageToUse = page !== undefined ? page : currentPage
       const skip = (pageToUse - 1) * pageSize
-      const hasSummary = activeTab === 'withSummary'
+      const hasSummary = activeTab === 'fromSubscription' ? undefined : activeTab === 'withSummary'
+      const source = activeTab === 'fromSubscription' ? 'subscription' : undefined
       const [data, count] = await Promise.all([
-        historyApi.getHistory(skip, pageSize, hasSummary),
-        historyApi.getHistoryCount(hasSummary)
+        historyApi.getHistory(skip, pageSize, hasSummary, source),
+        historyApi.getHistoryCount(hasSummary, source)
       ])
       setHistory(data)
       setTotalCount(count)
@@ -121,10 +122,11 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
     setIsSearching(true)
     try {
       const skip = (page - 1) * pageSize
-      const hasSummary = activeTab === 'withSummary'
+      const hasSummary = activeTab === 'fromSubscription' ? undefined : activeTab === 'withSummary'
+      const source = activeTab === 'fromSubscription' ? 'subscription' : undefined
       const [data, count] = await Promise.all([
-        historyApi.searchHistory(searchQuery.trim(), skip, pageSize, hasSummary),
-        historyApi.searchHistoryCount(searchQuery.trim(), hasSummary)
+        historyApi.searchHistory(searchQuery.trim(), skip, pageSize, hasSummary, source),
+        historyApi.searchHistoryCount(searchQuery.trim(), hasSummary, source)
       ])
       setHistory(data)
       setTotalCount(count)
@@ -721,6 +723,13 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
               >
                 {t('history.tabs.noTranscript')}
               </button>
+              <button
+                className={`tabs-trigger ${activeTab === 'fromSubscription' ? 'tabs-trigger-active' : ''}`}
+                onClick={() => handleTabChange('fromSubscription')}
+                type="button"
+              >
+                {t('history.tabs.fromSubscription')}
+              </button>
             </div>
 
               <div className="sort-control">
@@ -813,7 +822,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
       {/* Reprocess Dialog */}
       {/* Detail Modal */}
       {expandedId !== null && expandedDetail && (
-        <div className="modal-overlay" onClick={closeDetailModal}>
+        <div className="modal-overlay modal-overlay-below-header" onClick={closeDetailModal}>
           <div className="modal-content modal-fullscreen" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title-ellipsis">{expandedDetail.title || expandedDetail.url}</h3>

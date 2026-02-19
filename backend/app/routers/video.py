@@ -17,36 +17,15 @@ from app.models.database import VideoRecord, VideoStatus, User
 from app.routers.auth import get_current_user
 from app.services.video_downloader import VideoDownloader
 from app.services.audio_converter import AudioConverter
-from app.services.whisper_service import WhisperService
 from app.services.llm_service import LLMService
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
 
-# Initialize services
+# Initialize services (Whisper is only loaded in queue worker)
 video_downloader = VideoDownloader(settings.video_storage_dir)
 audio_converter = AudioConverter(settings.video_storage_dir)
-
-# Initialize Whisper service (will be initialized lazily or in lifespan)
-whisper_service = None
-
-def get_whisper_service():
-    """Get or initialize Whisper service"""
-    global whisper_service
-    if whisper_service is None:
-        try:
-            whisper_service = WhisperService(
-                model_size="medium",
-                device=settings.acceleration if settings.acceleration != "mlx" else "cpu",
-                compute_type=None
-            )
-            logger.info("Whisper service initialized successfully")
-        except Exception as e:
-            logger.warning(f"Whisper service initialization failed: {e}. Transcription will not be available.")
-            whisper_service = None
-    return whisper_service
-
 llm_service = LLMService()
 # Queue processing is handled by independent queue worker service
 

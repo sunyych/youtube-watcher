@@ -13,8 +13,9 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.database import init_db, SessionLocal
-from app.models.database import VideoRecord, VideoStatus, PlaylistItem, User
+from app.models.database import VideoRecord, VideoStatus, PlaylistItem, User, ChannelSubscription
 from app.config import settings
+from app.services.channel_service import fetch_latest_video_urls, resolve_channel
 from app.services.video_downloader import VideoDownloader, VideoDownloadError
 from app.services.audio_converter import AudioConverter
 from app.services.audio_pipeline import run_pipeline
@@ -41,6 +42,14 @@ _last_pause_log_at: Optional[datetime] = None
 # Download pacing (global, shared across tasks)
 _download_rate_lock = asyncio.Lock()
 _last_download_started_at: Optional[datetime] = None
+
+# Subscription check: fetch new videos from subscribed channels (default twice per day)
+SUBSCRIPTION_CHECK_INTERVAL_HOURS = max(0.25, float(os.getenv("SUBSCRIPTION_CHECK_INTERVAL_HOURS", "12")))
+SUBSCRIPTION_MAX_VIDEOS_PER_CHANNEL = max(1, min(50, int(os.getenv("SUBSCRIPTION_MAX_VIDEOS_PER_CHANNEL", "20"))))
+_last_subscription_check_at: Optional[datetime] = None
+PENDING_SUBSCRIPTIONS_INTERVAL_SECONDS = max(5, int(os.getenv("PENDING_SUBSCRIPTIONS_INTERVAL_SECONDS", "30")))
+RESOLVE_CHANNEL_TIMEOUT_SECONDS = max(30, int(os.getenv("RESOLVE_CHANNEL_TIMEOUT_SECONDS", "90")))
+_last_pending_subscriptions_at: Optional[datetime] = None
 
 
 def _now_utc() -> datetime:
@@ -882,6 +891,139 @@ async def process_video_task(record_id: int):
         db.close()
 
 
+async def _process_pending_subscriptions_task():
+    """Resolve pending subscriptions (channel_url -> channel_id, channel_title) in the background."""
+    db = SessionLocal()
+    resolved_any = False
+    try:
+        pending = (
+            db.query(ChannelSubscription)
+            .filter(ChannelSubscription.status == "pending", ChannelSubscription.channel_id.is_(None))
+            .all()
+        )
+        if not pending:
+            return
+        logger.info("Processing %d pending subscription(s)", len(pending))
+        loop = asyncio.get_event_loop()
+        for idx, sub in enumerate(pending, 1):
+            try:
+                logger.info(
+                    "Resolving subscription %s (%d/%d): %s",
+                    sub.id, idx, len(pending), sub.channel_url[:80] + ("..." if len(sub.channel_url) > 80 else ""),
+                )
+                try:
+                    channel_id, channel_title = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            lambda s=sub: resolve_channel(s.channel_url),
+                        ),
+                        timeout=RESOLVE_CHANNEL_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Resolving subscription %s timed out after %ds, will retry later",
+                        sub.id, RESOLVE_CHANNEL_TIMEOUT_SECONDS,
+                    )
+                    continue
+                if not channel_id:
+                    logger.warning("Could not resolve channel for subscription %s URL %s", sub.id, sub.channel_url)
+                    continue
+                existing = (
+                    db.query(ChannelSubscription)
+                    .filter(
+                        ChannelSubscription.user_id == sub.user_id,
+                        ChannelSubscription.channel_id == channel_id,
+                        ChannelSubscription.id != sub.id,
+                    )
+                    .first()
+                )
+                if existing:
+                    db.delete(sub)
+                    logger.info("Subscription %s merged into existing %s (channel %s)", sub.id, existing.id, channel_id)
+                    resolved_any = True
+                else:
+                    sub.channel_id = channel_id
+                    sub.channel_title = channel_title
+                    sub.status = "resolved"
+                    logger.info(
+                        "Subscription %s resolved to channel %s (%s)",
+                        sub.id, channel_id, (channel_title or "")[:50],
+                    )
+                    resolved_any = True
+            except Exception as e:
+                logger.warning("Failed to resolve subscription %s: %s", sub.id, e, exc_info=True)
+        db.commit()
+        if resolved_any:
+            asyncio.create_task(_subscription_check_task())
+            logger.info("Triggered subscription check for newly resolved channel(s)")
+    except Exception as e:
+        logger.error("Process pending subscriptions failed: %s", e, exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _subscription_check_task():
+    """Fetch latest videos from every subscription (pending or resolved) and enqueue new URLs. Uses channel_url so no need to wait for resolve_channel."""
+    global _last_subscription_check_at
+    _last_subscription_check_at = _now_utc()
+    db = SessionLocal()
+    try:
+        subs = db.query(ChannelSubscription).filter(ChannelSubscription.channel_url.isnot(None)).all()
+        if not subs:
+            return
+        logger.info("Running subscription check for %d channel(s)", len(subs))
+        loop = asyncio.get_event_loop()
+        for idx, sub in enumerate(subs, 1):
+            try:
+                if sub.channel_id:
+                    linked = db.query(VideoRecord).filter(
+                        VideoRecord.user_id == sub.user_id,
+                        VideoRecord.channel_id == sub.channel_id,
+                        VideoRecord.subscription_id.is_(None),
+                    ).update({VideoRecord.subscription_id: sub.id}, synchronize_session=False)
+                    if linked:
+                        logger.info("Subscription %s: linked %d existing video(s) from this channel", sub.id, linked)
+                logger.info("Fetching videos for subscription %s (%d/%d): %s", sub.id, idx, len(subs), (sub.channel_url or "")[:60])
+                urls = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda s=sub: fetch_latest_video_urls(s.channel_url, max_items=SUBSCRIPTION_MAX_VIDEOS_PER_CHANNEL),
+                    ),
+                    timeout=RESOLVE_CHANNEL_TIMEOUT_SECONDS,
+                )
+                added = 0
+                for url in urls:
+                    existing = (
+                        db.query(VideoRecord)
+                        .filter(VideoRecord.user_id == sub.user_id, VideoRecord.url == url)
+                        .first()
+                    )
+                    if not existing:
+                        record = VideoRecord(
+                            url=url,
+                            user_id=sub.user_id,
+                            subscription_id=sub.id,
+                            status=VideoStatus.PENDING,
+                            progress=0.0,
+                        )
+                        db.add(record)
+                        added += 1
+                if added:
+                    logger.info("Subscription %s: enqueued %d new video(s) for download", sub.id, added)
+                sub.last_check_at = _now_utc()
+            except asyncio.TimeoutError:
+                logger.warning("Fetch videos for subscription %s timed out after %ds", sub.id, RESOLVE_CHANNEL_TIMEOUT_SECONDS)
+            except Exception as e:
+                logger.warning("Subscription check failed for subscription %s: %s", sub.id, e, exc_info=True)
+        db.commit()
+    except Exception as e:
+        logger.error("Subscription check failed: %s", e, exc_info=True)
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def worker_loop():
     """Main worker loop that polls for pending and stuck tasks"""
     logger.info("Queue worker started")
@@ -1037,6 +1179,21 @@ async def worker_loop():
                         continue
                     running_processing.add(rec.id)
                     asyncio.create_task(_run_processing(rec.id))
+
+            # Pending subscriptions: resolve channel_url -> channel_id/title (every PENDING_SUBSCRIPTIONS_INTERVAL_SECONDS)
+            global _last_pending_subscriptions_at
+            if _last_pending_subscriptions_at is None or (
+                (now - _last_pending_subscriptions_at).total_seconds() >= PENDING_SUBSCRIPTIONS_INTERVAL_SECONDS
+            ):
+                _last_pending_subscriptions_at = now
+                asyncio.create_task(_process_pending_subscriptions_task())
+            # Subscription check: fetch new videos from subscribed channels (every SUBSCRIPTION_CHECK_INTERVAL_HOURS)
+            global _last_subscription_check_at
+            if _last_subscription_check_at is None or (
+                (now - _last_subscription_check_at).total_seconds() >= SUBSCRIPTION_CHECK_INTERVAL_HOURS * 3600
+            ):
+                _last_subscription_check_at = now
+                asyncio.create_task(_subscription_check_task())
 
             # When nothing is queued, back off a bit
             await asyncio.sleep(1)

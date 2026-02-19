@@ -97,6 +97,7 @@ export interface HistoryItem {
   downloaded_at?: string
   read_count?: number
   created_at: string
+  subscription_id?: number  // Set when video was added via channel subscription
 }
 
 export interface HistoryDetail extends HistoryItem {
@@ -286,10 +287,13 @@ export const videoApi = {
 }
 
 export const historyApi = {
-  getHistory: async (skip = 0, limit = 100, hasSummary?: boolean): Promise<HistoryItem[]> => {
+  getHistory: async (skip = 0, limit = 100, hasSummary?: boolean, source?: 'subscription'): Promise<HistoryItem[]> => {
     const params: Record<string, any> = { skip, limit }
     if (typeof hasSummary === 'boolean') {
       params.has_summary = hasSummary
+    }
+    if (source === 'subscription') {
+      params.source = 'subscription'
     }
 
     const response = await api.get<HistoryItem[]>('/api/history', {
@@ -298,9 +302,16 @@ export const historyApi = {
     return response.data
   },
   
-  getHistoryCount: async (hasSummary?: boolean): Promise<number> => {
+  getHistoryCount: async (hasSummary?: boolean, source?: 'subscription'): Promise<number> => {
+    const params: Record<string, any> = {}
+    if (typeof hasSummary === 'boolean') {
+      params.has_summary = hasSummary
+    }
+    if (source === 'subscription') {
+      params.source = 'subscription'
+    }
     const response = await api.get<{ count: number }>('/api/history/count', {
-      params: typeof hasSummary === 'boolean' ? { has_summary: hasSummary } : undefined,
+      params: Object.keys(params).length ? params : undefined,
     })
     return response.data.count
   },
@@ -335,10 +346,13 @@ export const historyApi = {
     return response.data
   },
   
-  searchHistory: async (query: string, skip = 0, limit = 100, hasSummary?: boolean): Promise<HistoryItem[]> => {
+  searchHistory: async (query: string, skip = 0, limit = 100, hasSummary?: boolean, source?: 'subscription'): Promise<HistoryItem[]> => {
     const params: Record<string, any> = { q: query, skip, limit }
     if (typeof hasSummary === 'boolean') {
       params.has_summary = hasSummary
+    }
+    if (source === 'subscription') {
+      params.source = 'subscription'
     }
 
     const response = await api.get<HistoryItem[]>('/api/history/search', {
@@ -347,9 +361,16 @@ export const historyApi = {
     return response.data
   },
   
-  searchHistoryCount: async (query: string, hasSummary?: boolean): Promise<number> => {
+  searchHistoryCount: async (query: string, hasSummary?: boolean, source?: 'subscription'): Promise<number> => {
+    const params: Record<string, any> = { q: query }
+    if (typeof hasSummary === 'boolean') {
+      params.has_summary = hasSummary
+    }
+    if (source === 'subscription') {
+      params.source = 'subscription'
+    }
     const response = await api.get<{ count: number }>('/api/history/search/count', {
-      params: typeof hasSummary === 'boolean' ? { q: query, has_summary: hasSummary } : { q: query },
+      params,
     })
     return response.data.count
   },
@@ -369,6 +390,40 @@ export const historyApi = {
   
   deleteHistory: async (id: number): Promise<void> => {
     await api.delete(`/api/history/${id}`)
+  },
+}
+
+export interface SubscriptionItem {
+  id: number
+  channel_id: string | null
+  channel_url: string
+  channel_title: string | null
+  status: 'pending' | 'resolved'
+  created_at: string
+  last_check_at: string | null
+}
+
+export const subscriptionsApi = {
+  list: async (): Promise<SubscriptionItem[]> => {
+    const response = await api.get<SubscriptionItem[]>('/api/subscriptions')
+    return response.data
+  },
+  subscribe: async (channelUrl: string): Promise<SubscriptionItem> => {
+    const response = await api.post<SubscriptionItem>('/api/subscriptions', { channel_url: channelUrl })
+    return response.data
+  },
+  unsubscribe: async (id: number): Promise<void> => {
+    await api.delete(`/api/subscriptions/${id}`)
+  },
+  getVideos: async (subscriptionId: number, skip = 0, limit = 100): Promise<HistoryItem[]> => {
+    const response = await api.get<HistoryItem[]>(`/api/subscriptions/${subscriptionId}/videos`, {
+      params: { skip, limit },
+    })
+    return response.data
+  },
+  update: async (id: number, payload: { channel_url?: string }): Promise<SubscriptionItem> => {
+    const response = await api.patch<SubscriptionItem>(`/api/subscriptions/${id}`, payload)
+    return response.data
   },
 }
 

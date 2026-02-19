@@ -135,10 +135,32 @@ services:
     networks:
       - youtube-watcher-network
 
+  caddy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    container_name: youtube-watcher-caddy
+    environment:
+      PROXY_DOMAIN: ${PROXY_DOMAIN:-}
+      PROXY_HTTP_PORT: ${PROXY_HTTP_PORT:-80}
+    ports:
+      - "${PROXY_HTTP_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - frontend
+    networks:
+      - youtube-watcher-network
+    profiles:
+      - proxy
+
 networks:
   youtube-watcher-network:
     driver: bridge
 
 volumes:
   postgres_data:
+    driver: local
+  caddy_data:
     driver: local

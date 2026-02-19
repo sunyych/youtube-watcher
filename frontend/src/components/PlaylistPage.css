@@ -408,6 +408,38 @@
   background: #e8edff;
 }
 
+.playlist-item.selected {
+  background: #e8edff;
+  border-color: #667eea;
+}
+
+.playlist-item-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.remove-selected-button {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.remove-selected-button:hover:not(:disabled) {
+  background: #c0392b;
+}
+
+.remove-selected-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .playlist-item-drag-handle {
   color: #999;
   cursor: grab;

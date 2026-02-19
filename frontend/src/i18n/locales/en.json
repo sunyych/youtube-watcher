@@ -72,7 +72,8 @@
     },
     "tabs": {
       "noTranscript": "No transcript/summary",
-      "withSummary": "With summary"
+      "withSummary": "With summary",
+      "fromSubscription": "From subscriptions"
     },
     "view": {
       "label": "View",
@@ -144,6 +145,31 @@
       "addToPlaylistFailed": "Failed to add to playlist"
     }
   },
+  "subscriptions": {
+    "title": "Subscriptions",
+    "add": "Add",
+    "addPlaceholder": "Channel URL (e.g. https://youtube.com/@channel)",
+    "adding": "Adding...",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteConfirm": "Are you sure you want to unsubscribe from \"{{title}}\"?",
+    "deleteFailed": "Failed to remove subscription",
+    "updateFailed": "Failed to update subscription",
+    "addFailed": "Failed to add subscription",
+    "loadFailed": "Failed to load subscriptions",
+    "channelContent": "Channel content",
+    "addToPlaylist": "Add to playlist",
+    "selectPlaylist": "Select a playlist",
+    "noVideosSelected": "Please select at least one video",
+    "noVideos": "No videos from this channel yet",
+    "videosLoadFailed": "Failed to load channel videos",
+    "emptyState": "No subscriptions yet. Add a channel URL above.",
+    "created": "Created",
+    "lastCheck": "Last check",
+    "unknownChannel": "Unknown channel",
+    "pendingResolve": "Resolving...",
+    "statusPending": "Pending"
+  },
   "playlist": {
     "title": "Playlist",
     "nav": {
@@ -175,7 +201,10 @@
       "list": "Reading list",
       "noKeywords": "No keywords",
       "noSummary": "No summary",
-      "openDetail": "Open detail"
+      "openDetail": "Open detail",
+      "filterPlaceholder": "Filter by title / keywords...",
+      "unreadOnly": "Unread only",
+      "noFilterMatch": "No matches"
     },
     "backToPlaylist": "Back to playlist",
     "playlist": "Playlist",
@@ -185,6 +214,10 @@
     "remove": "Remove",
     "removeConfirm": "Are you sure you want to remove this video from the playlist?",
     "removeFailed": "Failed to remove",
+    "removeSelected": "Remove selected",
+    "removeSelectedConfirm": "Remove {{count}} selected video(s) from the playlist?",
+    "removeSelectedPartial": "{{fail}} item(s) failed to remove",
+    "selectItem": "Select (Shift+click for range)",
     "moveUp": "Move up",
     "moveDown": "Move down",
     "moveFailed": "Failed to move",

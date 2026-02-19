@@ -1,0 +1,157 @@
+.container {
+  width: 360px;
+  padding: 12px;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  color: #111827;
+}
+
+.header {
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 10px;
+  background: #ffffff;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.card-desc {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.actions {
+  justify-content: flex-start;
+}
+
+.label {
+  width: 76px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  outline: none;
+}
+
+.input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.btn {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  cursor: pointer;
+}
+
+.btn.primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.link {
+  font-size: 12px;
+  color: #2563eb;
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.status {
+  min-height: 16px;
+  font-size: 12px;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.status.error {
+  color: #b91c1c;
+}
+
+.status.ok {
+  color: #047857;
+}
+
+.list {
+  max-height: 240px;
+  overflow: auto;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 6px;
+}
+
+.item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.item input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+.item .meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.item .name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.25;
+}
+
+.item .url {
+  font-size: 11px;
+  color: #6b7280;
+  word-break: break-all;
+}

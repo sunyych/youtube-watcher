@@ -1,5 +1,5 @@
 """Database models"""
-from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Float, Enum as SQLEnum, ForeignKey
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Float, Enum as SQLEnum, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -34,6 +34,29 @@ class User(Base):
     # Relationships
     video_records = relationship("VideoRecord", back_populates="user")
     playlists = relationship("Playlist", back_populates="user")
+    channel_subscriptions = relationship("ChannelSubscription", back_populates="user", cascade="all, delete-orphan")
+
+
+class ChannelSubscription(Base):
+    """User's subscription to a YouTube channel for auto-downloading new videos.
+    status='pending': only channel_url stored; queue will resolve to channel_id/title.
+    status='resolved': channel_id and channel_title set, included in subscription check.
+    """
+    __tablename__ = "channel_subscriptions"
+    # Uniqueness: partial indexes in migration (user_id, channel_id) when resolved, (user_id, channel_url) when pending
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    channel_id = Column(String, nullable=True, index=True)  # Set by queue when resolved
+    channel_url = Column(String, nullable=False)
+    channel_title = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="resolved", index=True)  # 'pending' | 'resolved'
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_check_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="channel_subscriptions")
+    video_records = relationship("VideoRecord", back_populates="subscription")
 
 
 class VideoRecord(Base):
@@ -71,9 +94,11 @@ class VideoRecord(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    subscription_id = Column(Integer, ForeignKey("channel_subscriptions.id"), nullable=True, index=True)
     
     # Relationships
     user = relationship("User", back_populates="video_records")
+    subscription = relationship("ChannelSubscription", back_populates="video_records")
 
     def bump_read_count(self) -> int:
         """Increment read_count for this record (in-memory)."""

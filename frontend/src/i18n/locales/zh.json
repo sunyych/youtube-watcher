@@ -72,7 +72,8 @@
     },
     "tabs": {
       "noTranscript": "无转录/无总结",
-      "withSummary": "有总结"
+      "withSummary": "有总结",
+      "fromSubscription": "来自订阅"
     },
     "view": {
       "label": "显示",
@@ -144,6 +145,31 @@
       "addToPlaylistFailed": "添加到播放列表失败"
     }
   },
+  "subscriptions": {
+    "title": "订阅",
+    "add": "添加",
+    "addPlaceholder": "频道 URL（如 https://youtube.com/@channel）",
+    "adding": "添加中...",
+    "edit": "编辑",
+    "delete": "删除",
+    "deleteConfirm": "确定要取消订阅「{{title}}」吗？",
+    "deleteFailed": "取消订阅失败",
+    "updateFailed": "更新订阅失败",
+    "addFailed": "添加订阅失败",
+    "loadFailed": "加载订阅列表失败",
+    "channelContent": "频道内容",
+    "addToPlaylist": "添加到播放列表",
+    "selectPlaylist": "选择播放列表",
+    "noVideosSelected": "请至少选择一个视频",
+    "noVideos": "该频道暂无已下载视频",
+    "videosLoadFailed": "加载频道视频失败",
+    "emptyState": "暂无订阅。请在上方添加频道 URL。",
+    "created": "添加于",
+    "lastCheck": "上次检查",
+    "unknownChannel": "未知频道",
+    "pendingResolve": "解析中…",
+    "statusPending": "待解析"
+  },
   "playlist": {
     "title": "播放列表",
     "nav": {
@@ -175,7 +201,10 @@
       "list": "阅读列表",
       "noKeywords": "暂无关键词",
       "noSummary": "暂无总结",
-      "openDetail": "详细内容"
+      "openDetail": "详细内容",
+      "filterPlaceholder": "筛选标题/关键词...",
+      "unreadOnly": "仅未读",
+      "noFilterMatch": "无匹配项"
     },
     "backToPlaylist": "返回播放列表",
     "playlist": "播放列表",
@@ -185,6 +214,10 @@
     "remove": "移除",
     "removeConfirm": "确定要从播放列表移除此视频吗？",
     "removeFailed": "移除失败",
+    "removeSelected": "移除选中",
+    "removeSelectedConfirm": "确定要从播放列表移除选中的 {{count}} 个视频吗？",
+    "removeSelectedPartial": "有 {{fail}} 个移除失败",
+    "selectItem": "选择（Shift+点击可范围选择）",
     "moveUp": "上移",
     "moveDown": "下移",
     "moveFailed": "移动失败",

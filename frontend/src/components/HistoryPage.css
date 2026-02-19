@@ -1207,6 +1207,26 @@
   z-index: 1000;
 }
 
+/* History detail modal: start below header (menu height) */
+.modal-overlay-below-header {
+  align-items: flex-start;
+  padding-top: 80px;
+}
+
+.modal-overlay-below-header .modal-content.modal-fullscreen {
+  height: calc(100vh - 80px);
+}
+
+@media (max-width: 768px) {
+  .modal-overlay-below-header {
+    padding-top: 120px;
+  }
+
+  .modal-overlay-below-header .modal-content.modal-fullscreen {
+    height: calc(100vh - 120px);
+  }
+}
+
 .modal-content {
   background: white;
   border-radius: 8px;

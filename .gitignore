@@ -122,3 +122,4 @@ coverage/
 
 # Local YouTube cookies (DO NOT COMMIT)
 www.youtube.com_cookies.txt
+/data/*

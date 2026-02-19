@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Watcher Helper",
+  "version": "0.1.0",
+  "description": "Send YouTube videos to youtube-watcher backend for download; record other sites from the current tab.",
+  "action": {
+    "default_title": "YouTube Watcher",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["youtube_menu.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "tabCapture",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "options_page": "options.html"
+}

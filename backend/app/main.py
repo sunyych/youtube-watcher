@@ -8,8 +8,7 @@ import logging
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, video, history, playlist
-from app.routers.video import get_whisper_service
+from app.routers import auth, video, history, playlist, subscriptions
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,13 +23,7 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database initialized")
     
-    # Initialize Whisper service (lazy initialization, just check availability)
-    logger.info("Checking Whisper service availability...")
-    whisper_svc = get_whisper_service()
-    if whisper_svc:
-        logger.info("Whisper service available")
-    else:
-        logger.warning("Whisper service not available (will be handled by queue worker)")
+    # Whisper loads only in queue worker to keep backend startup fast
     
     # Print access information
     print_access_info()
@@ -62,6 +55,7 @@ app.include_router(auth.router)
 app.include_router(video.router)
 app.include_router(history.router)
 app.include_router(playlist.router)
+app.include_router(subscriptions.router)
 
 
 def print_access_info():

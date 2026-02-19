@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Watcher Options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Options</h1>
+      <p class="hint">Configure the backend API URL used by the extension.</p>
+
+      <div class="row">
+        <label class="label" for="baseUrl">Backend base URL</label>
+        <input id="baseUrl" class="input" placeholder="http://localhost:8000" />
+      </div>
+
+      <div class="row actions">
+        <button id="btnSave" class="btn primary">Save</button>
+        <div id="status" class="status"></div>
+      </div>
+
+      <details class="details">
+        <summary>Notes</summary>
+        <ul>
+          <li>For Docker default, backend is usually <code>http://localhost:8000</code>.</li>
+          <li>You must include the protocol (<code>http://</code> or <code>https://</code>).</li>
+        </ul>
+      </details>
+    </div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

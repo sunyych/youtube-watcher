@@ -11,7 +11,7 @@ import re
 import logging
 
 from app.database import get_db
-from app.models.database import VideoRecord, User
+from app.models.database import VideoRecord, User, PlaylistItem
 from app.routers.auth import get_current_user
 from app.services.markdown_exporter import MarkdownExporter
 from app.services.llm_service import LLMService
@@ -43,7 +43,8 @@ class HistoryItem(BaseModel):
     downloaded_at: Optional[datetime]
     read_count: int
     created_at: datetime
-    
+    subscription_id: Optional[int]  # Set when video was added via channel subscription
+
     class Config:
         from_attributes = True
 
@@ -61,6 +62,7 @@ async def get_history(
     skip: int = 0,
     limit: int = 100,
     has_summary: Optional[bool] = None,
+    source: Optional[str] = Query(None, description="Filter by source: 'subscription' for from-subscription only"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -75,6 +77,9 @@ async def get_history(
     elif has_summary is False:
         query = query.filter(VideoRecord.summary.is_(None))
 
+    if source == "subscription":
+        query = query.filter(VideoRecord.subscription_id.isnot(None))
+
     records = query.order_by(desc(VideoRecord.created_at)).offset(skip).limit(limit).all()
     return records
 
@@ -82,6 +87,7 @@ async def get_history(
 @router.get("/count")
 async def get_history_count(
     has_summary: Optional[bool] = None,
+    source: Optional[str] = Query(None, description="Filter by source: 'subscription' for from-subscription only"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -96,6 +102,9 @@ async def get_history_count(
     elif has_summary is False:
         query = query.filter(VideoRecord.summary.is_(None))
 
+    if source == "subscription":
+        query = query.filter(VideoRecord.subscription_id.isnot(None))
+
     count = query.count()
     return {"count": count}
 
@@ -106,6 +115,7 @@ async def search_history(
     skip: int = 0,
     limit: int = 100,
     has_summary: Optional[bool] = None,
+    source: Optional[str] = Query(None, description="Filter by source: 'subscription' for from-subscription only"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -134,6 +144,9 @@ async def search_history(
     elif has_summary is False:
         query = query.filter(VideoRecord.summary.is_(None))
 
+    if source == "subscription":
+        query = query.filter(VideoRecord.subscription_id.isnot(None))
+
     records = query.order_by(desc(VideoRecord.updated_at)).offset(skip).limit(limit).all()
     
     return records
@@ -143,6 +156,7 @@ async def search_history(
 async def search_history_count(
     q: str = Query(..., description="Search query"),
     has_summary: Optional[bool] = None,
+    source: Optional[str] = Query(None, description="Filter by source: 'subscription' for from-subscription only"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -167,6 +181,9 @@ async def search_history_count(
         query = query.filter(VideoRecord.summary.isnot(None))
     elif has_summary is False:
         query = query.filter(VideoRecord.summary.is_(None))
+
+    if source == "subscription":
+        query = query.filter(VideoRecord.subscription_id.isnot(None))
 
     count = query.count()
     
@@ -464,6 +481,13 @@ async def delete_history(
                     logger.info(f"Deleted transcript file: {transcript_path}")
                 except Exception as e:
                     logger.warning(f"Failed to delete transcript file {transcript_path}: {e}")
+        
+        # Remove from all playlists first (foreign key)
+        removed_playlist_items = db.query(PlaylistItem).filter(
+            PlaylistItem.video_record_id == record.id
+        ).delete()
+        if removed_playlist_items:
+            logger.info(f"Removed video {record_id} from {removed_playlist_items} playlist(s)")
         
         # Delete the database record
         db.delete(record)
