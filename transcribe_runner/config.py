@@ -41,3 +41,7 @@ VAD_MAX_SPEECH_DURATION_S = get_float("VAD_MAX_SPEECH_DURATION_S", 30.0)
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "medium")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cuda")
 PORT = get_int("PORT", 8765)
+# Max concurrent transcription jobs (e.g. one per GPU). Default 3.
+MAX_CONCURRENT_JOBS = max(1, get_int("MAX_CONCURRENT_JOBS", 3))
+# Number of GPUs to use (device ids 0..NUM_GPUS-1). Default same as MAX_CONCURRENT_JOBS.
+NUM_GPUS = max(1, get_int("NUM_GPUS", MAX_CONCURRENT_JOBS))

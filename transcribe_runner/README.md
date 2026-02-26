@@ -33,6 +33,8 @@ docker run --gpus all -p 8765:8765 -e WHISPER_DEVICE=cuda transcribe_runner
 - `PORT` — Server port (default `8765`).
 - `WHISPER_MODEL_SIZE` — Whisper model (default `medium`).
 - `WHISPER_DEVICE` — `cuda` or `cpu`. Default is **`cuda`** when using Docker Compose / Dockerfile.gpu. Set to `cpu` if you run the GPU image without a GPU (e.g. fallback).
+- `MAX_CONCURRENT_JOBS` — Max transcription jobs running at once, e.g. one per GPU (default `3`).
+- `NUM_GPUS` — Number of GPUs; jobs are assigned round-robin to `cuda:0` … `cuda:(NUM_GPUS-1)` (default same as `MAX_CONCURRENT_JOBS`).
 - `AUDIO_TARGET_SAMPLE_RATE`, `VAD_*` — Same as backend pipeline (optional; defaults match the main app).
 
 ## Connect the queue to the runner
@@ -42,9 +44,10 @@ On the host where the main app and queue run (e.g. in the repo root `.env`):
 ```bash
 # Replace with the GPU machine's IP or hostname and the port (default 8765)
 TRANSCRIBE_RUNNER_URL=http://<gpu-host>:8765
-# Optional: max wait per job (default 7200 = 2 hours), poll interval (default 30s)
+# Optional: max wait per job (default 7200 = 2 hours), poll interval (default 30s), concurrent jobs (default 3)
 TRANSCRIBE_RUNNER_TIMEOUT_SECONDS=7200
 TRANSCRIBE_RUNNER_POLL_INTERVAL_SECONDS=30
+TRANSCRIBE_RUNNER_CONCURRENCY=3
 ```
 
 Then restart the queue service (e.g. `docker compose up -d queue`). If `TRANSCRIBE_RUNNER_URL` is empty, the queue uses local Whisper (slower, no GPU required).

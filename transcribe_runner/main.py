@@ -1,19 +1,20 @@
 """
 Transcribe runner: HTTP API for GPU-accelerated transcription.
 POST /transcribe -> 202 + job_id; GET /transcribe/{job_id} -> pending/completed/failed.
+Supports multiple concurrent jobs (default 3), one per GPU (cuda:0, cuda:1, cuda:2).
 """
-import asyncio
 import logging
 import os
 import tempfile
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from config import PORT, WHISPER_MODEL_SIZE, WHISPER_DEVICE
+from config import PORT, WHISPER_MODEL_SIZE, MAX_CONCURRENT_JOBS, NUM_GPUS
 from pipeline import run_pipeline
 from whisper_service import WhisperService
 
@@ -26,18 +27,30 @@ app = FastAPI(title="Transcribe Runner", version="1.0")
 jobs: dict = {}
 _jobs_lock = threading.Lock()
 
-# Lazy-init Whisper (heavy); done in worker thread
-_whisper_service: WhisperService | None = None
+# One WhisperService per GPU (lazy init in worker threads)
+_whisper_services: dict[int, WhisperService] = {}
+_whisper_lock = threading.Lock()
+# Round-robin device assignment for incoming jobs
+_device_counter = 0
+_device_counter_lock = threading.Lock()
+
+# Bounded pool: at most MAX_CONCURRENT_JOBS run at once (e.g. 3 GPUs)
+_executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
 
 
-def _get_whisper() -> WhisperService:
-    global _whisper_service
-    if _whisper_service is None:
-        _whisper_service = WhisperService(model_size=WHISPER_MODEL_SIZE, device=WHISPER_DEVICE)
-    return _whisper_service
+def _get_whisper(device_id: int) -> WhisperService:
+    global _whisper_services
+    with _whisper_lock:
+        if device_id not in _whisper_services:
+            device_str = f"cuda:{device_id}" if device_id < NUM_GPUS else "cuda:0"
+            _whisper_services[device_id] = WhisperService(
+                model_size=WHISPER_MODEL_SIZE,
+                device=device_str,
+            )
+        return _whisper_services[device_id]
 
 
-def _run_job(job_id: str, audio_path: str, language: str | None):
+def _run_job(job_id: str, audio_path: str, language: str | None, device_id: int):
     try:
         with _jobs_lock:
             jobs[job_id]["status"] = "processing"
@@ -62,7 +75,7 @@ def _run_job(job_id: str, audio_path: str, language: str | None):
                     p = jobs[job_id].get("progress", 0)
                     jobs[job_id]["progress"] = min(p + 0.05, 0.99)
 
-        whisper = _get_whisper()
+        whisper = _get_whisper(device_id)
         result = whisper.transcribe_segments(
             audio_chunks,
             chunk_metadata,
@@ -112,9 +125,11 @@ async def submit_transcribe(
         os.close(fd)
     with _jobs_lock:
         jobs[job_id] = {"status": "pending", "progress": 0.0, "result": None, "error": None}
-    thread = threading.Thread(target=_run_job, args=(job_id, path, language))
-    thread.daemon = True
-    thread.start()
+    with _device_counter_lock:
+        global _device_counter
+        device_id = _device_counter % NUM_GPUS
+        _device_counter += 1
+    _executor.submit(_run_job, job_id, path, language, device_id)
     return JSONResponse(status_code=202, content={"job_id": job_id})
 
 

@@ -54,6 +54,11 @@ PENDING_SUBSCRIPTIONS_INTERVAL_SECONDS = max(5, int(os.getenv("PENDING_SUBSCRIPT
 RESOLVE_CHANNEL_TIMEOUT_SECONDS = max(30, int(os.getenv("RESOLVE_CHANNEL_TIMEOUT_SECONDS", "90")))
 _last_pending_subscriptions_at: Optional[datetime] = None
 
+# Runner queue: when using transcribe_runner, jobs are queued here; a single worker submits one at a time
+# and as soon as one returns, submits the next (no waiting for the next process_video_task cycle).
+_runner_pending_queue: Optional[asyncio.Queue] = None  # items: (record_id, audio_path, language, future)
+_runner_worker_started = False
+
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -230,14 +235,27 @@ def get_whisper_service():
         return None
 
 
-async def _transcribe_via_runner(
+async def _update_runner_record_progress(record_id: int, progress_pct: float) -> None:
+    """Update record progress by id (used by runner worker with its own session)."""
+    db = SessionLocal()
+    try:
+        record = db.query(VideoRecord).filter(VideoRecord.id == record_id).first()
+        if record:
+            record.updated_at = datetime.now(timezone.utc)
+            record.progress = 60.0 + (progress_pct * 30.0)
+            db.commit()
+    except Exception as e:
+        logger.debug(f"Runner progress update failed for record {record_id}: {e}")
+    finally:
+        db.close()
+
+
+async def _transcribe_via_runner_impl(
     audio_path: str,
     language: Optional[str],
     record_id: int,
-    db,
-    record,
 ) -> Optional[Dict[str, Any]]:
-    """Upload WAV to transcribe_runner, poll until done. Returns result dict or None on failure."""
+    """Submit WAV to runner, poll until done; update record progress by record_id. Returns result or None."""
     base_url = (getattr(settings, "transcribe_runner_url", None) or "").strip().rstrip("/")
     if not base_url:
         return None
@@ -247,6 +265,104 @@ async def _transcribe_via_runner(
     if not path.exists():
         logger.error(f"Audio file not found for record {record_id}: {audio_path}")
         return None
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(path, "rb") as f:
+                files = {"file": (path.name, f, "audio/wav")}
+                data = {} if not language else {"language": language}
+                r = await client.post(f"{base_url}/transcribe", files=files, data=data)
+            r.raise_for_status()
+            body = r.json()
+            job_id = body.get("job_id")
+            if not job_id:
+                logger.error(f"Runner did not return job_id for record {record_id}")
+                return None
+        logger.info(f"Record {record_id}: transcribe job submitted, job_id={job_id}, polling up to {timeout_s}s")
+        started = datetime.now(timezone.utc)
+        while (datetime.now(timezone.utc) - started).total_seconds() < timeout_s:
+            await asyncio.sleep(poll_interval_s)
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    r = await client.get(f"{base_url}/transcribe/{job_id}")
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                logger.warning(f"Record {record_id}: poll error {e}, continuing")
+                await _update_runner_record_progress(record_id, 0.0)
+                continue
+            status = data.get("status")
+            if status == "completed":
+                return {
+                    "text": data.get("text", ""),
+                    "language": data.get("language", "unknown"),
+                    "segments": data.get("segments", []),
+                }
+            if status == "failed":
+                logger.error(f"Record {record_id}: runner job failed: {data.get('error', 'unknown')}")
+                return None
+            progress = data.get("progress", 0.0)
+            await _update_runner_record_progress(record_id, progress)
+        logger.error(f"Record {record_id}: transcribe runner timeout after {timeout_s}s")
+        return None
+    except Exception as e:
+        logger.exception(f"Record {record_id}: transcribe via runner failed: {e}")
+        return None
+
+
+async def _runner_worker() -> None:
+    """Single background worker: take one job from queue, submit to runner, poll; on done set future and immediately take next."""
+    global _runner_pending_queue
+    if _runner_pending_queue is None:
+        return
+    logger.info("Transcribe runner queue worker started (submit next as soon as previous returns)")
+    while True:
+        try:
+            record_id, audio_path, language, future = await _runner_pending_queue.get()
+            try:
+                result = await _transcribe_via_runner_impl(audio_path, language, record_id)
+                future.set_result(result)
+            except Exception as e:
+                if not future.done():
+                    future.set_exception(e)
+            # next iteration immediately: no sleep, send next request as soon as previous returned
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception(f"Runner worker error: {e}")
+
+
+async def _transcribe_via_runner(
+    audio_path: str,
+    language: Optional[str],
+    record_id: int,
+    db,
+    record,
+) -> Optional[Dict[str, Any]]:
+    """
+    When runner queue is used: enqueue job and wait for future. Otherwise (no queue): submit and poll inline.
+    Returns result dict or None on failure.
+    """
+    base_url = (getattr(settings, "transcribe_runner_url", None) or "").strip().rstrip("/")
+    if not base_url:
+        return None
+    global _runner_pending_queue, _runner_worker_started
+    if _runner_pending_queue is not None and _runner_worker_started:
+        # Use queue: enqueue and await future so next job is sent as soon as this one returns
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        _runner_pending_queue.put_nowait((record_id, audio_path, language, future))
+        try:
+            return await future
+        except Exception as e:
+            logger.exception(f"Record {record_id}: runner future error: {e}")
+            return None
+    # Fallback: submit and poll inline (same behavior as before queue existed)
+    path = Path(audio_path)
+    if not path.exists():
+        logger.error(f"Audio file not found for record {record_id}: {audio_path}")
+        return None
+    timeout_s = getattr(settings, "transcribe_runner_timeout_seconds", 7200)
+    poll_interval_s = getattr(settings, "transcribe_runner_poll_interval_seconds", 30)
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             with open(path, "rb") as f:
@@ -1352,11 +1468,21 @@ async def worker_loop():
 
 async def main():
     """Main entry point"""
+    global _runner_pending_queue, _runner_worker_started
     logger.info("Initializing queue worker...")
     logger.info("Initializing database...")
     init_db()
     logger.info("Database initialized")
-    
+
+    runner_url = (getattr(settings, "transcribe_runner_url", None) or "").strip()
+    if runner_url:
+        _runner_pending_queue = asyncio.Queue()
+        n = max(1, getattr(settings, "transcribe_runner_concurrency", 3))
+        for _ in range(n):
+            asyncio.create_task(_runner_worker())
+        _runner_worker_started = True
+        logger.info("Transcribe runner queue enabled: %d concurrent jobs (next sent as soon as slot free)", n)
+
     logger.info("Starting queue worker loop...")
     await worker_loop()
 

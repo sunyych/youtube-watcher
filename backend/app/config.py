@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     transcribe_runner_url: Optional[str] = None  # e.g. http://gpu-host:8765
     transcribe_runner_timeout_seconds: int = 7200  # max wait for one job (e.g. 2h)
     transcribe_runner_poll_interval_seconds: int = 30
+    transcribe_runner_concurrency: int = 3  # number of concurrent jobs sent to runner (e.g. one per GPU)
     
     # Database
     postgres_user: str = "youtube_watcher"

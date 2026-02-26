@@ -17,9 +17,16 @@ except ImportError:
 
 
 def _detect_compute_type(device: str) -> str:
-    if device == "cuda":
+    if device == "cuda" or (isinstance(device, str) and device.startswith("cuda:")):
         return "float16"
     return "int8"
+
+
+def _device_string(device_id: Optional[int] = None) -> str:
+    """Return device string: cuda:0, cuda:1, ... or WHISPER_DEVICE if device_id is None."""
+    if device_id is not None:
+        return f"cuda:{device_id}"
+    return WHISPER_DEVICE
 
 
 class WhisperService:
