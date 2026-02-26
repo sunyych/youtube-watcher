@@ -14,7 +14,8 @@ import {
   faBookOpen,
   faGripVertical
 } from '@fortawesome/free-solid-svg-icons'
-import { playlistApi, PlaylistItemResponse, PlaylistResponse, historyApi, HistoryItem } from '../services/api'
+import { playlistApi, PlaylistItemResponse, PlaylistResponse, historyApi, HistoryItem, HistoryDetail } from '../services/api'
+import HistoryDetailModal from './HistoryDetailModal'
 import './PlaylistPage.css'
 
 interface PlaylistPageProps {
@@ -48,6 +49,12 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
   const [selectedPlaylistItemIds, setSelectedPlaylistItemIds] = useState<Set<number>>(new Set())
   const [lastSelectedPlaylistItemIndex, setLastSelectedPlaylistItemIndex] = useState<number | null>(null)
   const [lastSelectedVideoIndex, setLastSelectedVideoIndex] = useState<number | null>(null)
+  const [detailData, setDetailData] = useState<HistoryDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const VIDEOS_PAGE_SIZE = 50
+  const ITEMS_PAGE_SIZE = 50
+  const [videosPage, setVideosPage] = useState(1)
+  const [itemsPage, setItemsPage] = useState(1)
 
   useEffect(() => {
     loadPlaylists(true)
@@ -68,7 +75,12 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     }
     setSelectedPlaylistItemIds(new Set())
     setLastSelectedPlaylistItemIndex(null)
+    setItemsPage(1)
   }, [selectedPlaylistId])
+
+  useEffect(() => {
+    setVideosPage(1)
+  }, [videoSearch])
 
   const refreshAssignedVideoIds = async (pls?: PlaylistResponse[]) => {
     const list = pls ?? playlists
@@ -148,6 +160,27 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
 
   const handlePlay = (videoRecordId: number) => {
     navigate(`/player/${videoRecordId}?from=playlist`)
+  }
+
+  const openVideoDetail = async (videoId: number) => {
+    setDetailLoading(true)
+    try {
+      const d = await historyApi.getDetail(videoId, { countRead: true })
+      setDetailData(d)
+    } catch (err) {
+      console.error('Failed to load video detail:', err)
+      alert(t('history.item.loadDetailFailed'))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const refreshAfterDetailDelete = () => {
+    if (selectedPlaylistId !== null && selectedPlaylistId !== UNASSIGNED_PLAYLIST_ID) {
+      loadPlaylistItems(selectedPlaylistId)
+    }
+    loadVideos()
+    refreshAssignedVideoIds()
   }
 
   const handleOpenPlaylistPlayer = () => {
@@ -359,18 +392,36 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
     })
   }, [sourceVideos, videoSearch])
 
+  const videosTotalPages = Math.max(1, Math.ceil(filteredSourceVideos.length / VIDEOS_PAGE_SIZE))
+  const paginatedVideos = useMemo(() => {
+    const start = (videosPage - 1) * VIDEOS_PAGE_SIZE
+    return filteredSourceVideos.slice(start, start + VIDEOS_PAGE_SIZE)
+  }, [filteredSourceVideos, videosPage])
+
+  const itemsTotalPages = Math.max(1, Math.ceil(items.length / ITEMS_PAGE_SIZE))
+  const paginatedItems = useMemo(() => {
+    const start = (itemsPage - 1) * ITEMS_PAGE_SIZE
+    return items.slice(start, start + ITEMS_PAGE_SIZE)
+  }, [items, itemsPage])
+
+  useEffect(() => {
+    if (videosPage > videosTotalPages) setVideosPage(videosTotalPages)
+  }, [videosPage, videosTotalPages])
+
+  useEffect(() => {
+    if (itemsPage > itemsTotalPages) setItemsPage(itemsTotalPages)
+  }, [itemsPage, itemsTotalPages])
+
   const handleSelectAll = () => {
-    const visibleIds = filteredSourceVideos.map((v) => v.id)
+    const visibleIds = paginatedVideos.map((v) => v.id)
     if (visibleIds.length === 0) return
 
     const allVisibleSelected = visibleIds.every((id) => selectedVideoIds.has(id))
     setSelectedVideoIds((prev) => {
       const next = new Set(prev)
       if (allVisibleSelected) {
-        // Deselect only visible results; keep other selections
         visibleIds.forEach((id) => next.delete(id))
       } else {
-        // Select all visible results
         visibleIds.forEach((id) => next.add(id))
       }
       return next
@@ -661,65 +712,107 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
               ) : items.length === 0 ? (
                 <div className="empty-state-small">{t('playlist.emptyState')}</div>
               ) : (
-                <div className="playlist-items-list">
-                  {items.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className={`playlist-item ${selectedPlaylistItemIds.has(item.id) ? 'selected' : ''} ${draggedItemId === item.id ? 'dragging' : ''} ${dragOverItemIndex === index ? 'drag-over' : ''}`}
-                      draggable
-                      onDragStart={(e) => handleItemDragStart(e, item.id)}
-                      onDragEnd={handleItemDragEnd}
-                      onDragOver={(e) => handleItemDragOver(e, index)}
-                      onDragLeave={handleItemDragLeave}
-                      onDrop={(e) => handleItemDrop(e, index)}
-                    >
-                      <input
-                        type="checkbox"
-                        className="playlist-item-checkbox"
-                        checked={selectedPlaylistItemIds.has(item.id)}
-                        onChange={() => {}}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handlePlaylistItemSelect(item.id, index, e.nativeEvent.shiftKey)
-                        }}
-                        aria-label={t('playlist.selectItem', '选择')}
-                      />
-                      <div className="playlist-item-drag-handle">
-                        <FontAwesomeIcon icon={faGripVertical} />
-                      </div>
-                      <div className="playlist-item-info">
-                        <h4>{item.title || item.url}</h4>
-                        <div className="playlist-item-meta">
-                          <span className={`status status-${item.status}`}>
-                            {item.status}
-                          </span>
-                          {item.status === 'completed' && (
-                            <span className="progress">{Math.round(item.progress)}%</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="playlist-item-actions">
-                        {isPlayableStatus(item.status) && (
-                          <button
-                            className="play-button"
-                            onClick={() => handlePlay(item.video_record_id)}
-                            title={t('playlist.play')}
-                          >
-                            <FontAwesomeIcon icon={faPlay} />
-                          </button>
-                        )}
-                        <button
-                          className="remove-button"
-                          onClick={() => handleRemove(item.id)}
-                          disabled={removing === item.id || removing === -1}
-                          title={t('playlist.remove')}
+                <>
+                  <div className="playlist-items-list">
+                    {paginatedItems.map((item, idx) => {
+                      const globalIndex = (itemsPage - 1) * ITEMS_PAGE_SIZE + idx
+                      return (
+                        <div
+                          key={item.id}
+                          className={`playlist-item ${selectedPlaylistItemIds.has(item.id) ? 'selected' : ''} ${draggedItemId === item.id ? 'dragging' : ''} ${dragOverItemIndex === globalIndex ? 'drag-over' : ''}`}
+                          draggable
+                          onDragStart={(e) => handleItemDragStart(e, item.id)}
+                          onDragEnd={handleItemDragEnd}
+                          onDragOver={(e) => handleItemDragOver(e, globalIndex)}
+                          onDragLeave={handleItemDragLeave}
+                          onDrop={(e) => handleItemDrop(e, globalIndex)}
                         >
-                          <FontAwesomeIcon icon={faTrash} />
-                        </button>
-                      </div>
+                          <input
+                            type="checkbox"
+                            className="playlist-item-checkbox"
+                            checked={selectedPlaylistItemIds.has(item.id)}
+                            onChange={() => {}}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handlePlaylistItemSelect(item.id, globalIndex, e.nativeEvent.shiftKey)
+                            }}
+                            aria-label={t('playlist.selectItem', '选择')}
+                          />
+                          <div className="playlist-item-drag-handle">
+                            <FontAwesomeIcon icon={faGripVertical} />
+                          </div>
+                          <div className="playlist-item-info">
+                            <button
+                              type="button"
+                              className="playlist-item-title-button"
+                              onClick={(e) => { e.stopPropagation(); openVideoDetail(item.video_record_id) }}
+                              disabled={detailLoading}
+                              title={t('history.item.openDetail', '查看详情')}
+                            >
+                              <h4>{item.title || item.url}</h4>
+                            </button>
+                            <div className="playlist-item-meta">
+                              <span className={`status status-${item.status}`}>
+                                {item.status}
+                              </span>
+                              {item.status === 'completed' && (
+                                <span className="progress">{Math.round(item.progress)}%</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="playlist-item-actions">
+                            {isPlayableStatus(item.status) && (
+                              <button
+                                className="play-button"
+                                onClick={() => handlePlay(item.video_record_id)}
+                                title={t('playlist.play')}
+                              >
+                                <FontAwesomeIcon icon={faPlay} />
+                              </button>
+                            )}
+                            <button
+                              className="remove-button"
+                              onClick={() => handleRemove(item.id)}
+                              disabled={removing === item.id || removing === -1}
+                              title={t('playlist.remove')}
+                            >
+                              <FontAwesomeIcon icon={faTrash} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {itemsTotalPages > 1 && (
+                    <div className="playlist-pagination">
+                      <button
+                        type="button"
+                        className="pagination-btn"
+                        onClick={() => setItemsPage((p) => Math.max(1, p - 1))}
+                        disabled={itemsPage <= 1}
+                        aria-label={t('playlist.pagination.previous')}
+                      >
+                        {t('playlist.pagination.previous')}
+                      </button>
+                      <span className="pagination-info">
+                        {t('playlist.pagination.pageInfo', {
+                          current: itemsPage,
+                          total: itemsTotalPages,
+                          count: items.length,
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        className="pagination-btn"
+                        onClick={() => setItemsPage((p) => Math.min(itemsTotalPages, p + 1))}
+                        disabled={itemsPage >= itemsTotalPages}
+                        aria-label={t('playlist.pagination.next')}
+                      >
+                        {t('playlist.pagination.next')}
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -752,8 +845,8 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
                 </div>
 
                 <div className="videos-actions">
-                  <button className="select-all-button" onClick={handleSelectAll} disabled={filteredSourceVideos.length === 0}>
-                    {filteredSourceVideos.length > 0 && filteredSourceVideos.every((v) => selectedVideoIds.has(v.id))
+                  <button className="select-all-button" onClick={handleSelectAll} disabled={paginatedVideos.length === 0}>
+                    {paginatedVideos.length > 0 && paginatedVideos.every((v) => selectedVideoIds.has(v.id))
                       ? t('playlist.deselectAll')
                       : t('playlist.selectAll')}
                   </button>
@@ -773,55 +866,104 @@ const PlaylistPage: React.FC<PlaylistPageProps> = ({ onLogout }) => {
             ) : filteredSourceVideos.length === 0 ? (
               <div className="empty-state">{t('playlist.noSearchResults', '没有匹配的视频')}</div>
             ) : (
-              <div className="videos-list">
-                {filteredSourceVideos.map((video, index) => (
-                  <div
-                    key={video.id}
-                    className={`video-item ${selectedVideoIds.has(video.id) ? 'selected' : ''} ${draggedVideoIds.has(video.id) ? 'dragging' : ''}`}
-                    draggable
-                    onDragStart={(e) => handleVideoDragStart(e, video.id)}
-                    onDragEnd={handleVideoDragEnd}
-                  >
-                    <input
-                      type="checkbox"
-                      aria-label={`${t('playlist.selectVideo', '选择视频')} ${video.id}`}
-                      checked={selectedVideoIds.has(video.id)}
-                      className="video-checkbox"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleVideoSelectByIndex(index, e.nativeEvent.shiftKey)
-                      }}
-                      onChange={() => {}}
-                    />
-                    <div className="video-item-info">
-                      <h4>{video.title || video.url}</h4>
-                      <div className="video-item-meta">
-                        <span className={`status status-${video.status}`}>
-                          {video.status}
-                        </span>
-                        {video.keywords && (
-                          <span className="video-keywords">
-                            {video.keywords.split(',').slice(0, 3).join(', ')}
-                          </span>
+              <>
+                <div className="videos-list">
+                  {paginatedVideos.map((video, idx) => {
+                    const globalIndex = (videosPage - 1) * VIDEOS_PAGE_SIZE + idx
+                    return (
+                      <div
+                        key={video.id}
+                        className={`video-item ${selectedVideoIds.has(video.id) ? 'selected' : ''} ${draggedVideoIds.has(video.id) ? 'dragging' : ''}`}
+                        draggable
+                        onDragStart={(e) => handleVideoDragStart(e, video.id)}
+                        onDragEnd={handleVideoDragEnd}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`${t('playlist.selectVideo', '选择视频')} ${video.id}`}
+                          checked={selectedVideoIds.has(video.id)}
+                          className="video-checkbox"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleVideoSelectByIndex(globalIndex, e.nativeEvent.shiftKey)
+                          }}
+                          onChange={() => {}}
+                        />
+                        <div className="video-item-info">
+                          <button
+                            type="button"
+                            className="playlist-video-title-button"
+                            onClick={(e) => { e.stopPropagation(); openVideoDetail(video.id) }}
+                            disabled={detailLoading}
+                            title={t('history.item.openDetail', '查看详情')}
+                          >
+                            <h4>{video.title || video.url}</h4>
+                          </button>
+                          <div className="video-item-meta">
+                            <span className={`status status-${video.status}`}>
+                              {video.status}
+                            </span>
+                            {video.keywords && (
+                              <span className="video-keywords">
+                                {video.keywords.split(',').slice(0, 3).join(', ')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {isPlayableStatus(video.status) && (
+                          <button
+                            className="video-play-button"
+                            onClick={() => handlePlay(video.id)}
+                            title={t('playlist.play')}
+                          >
+                            <FontAwesomeIcon icon={faPlay} />
+                          </button>
                         )}
                       </div>
-                    </div>
-                    {isPlayableStatus(video.status) && (
-                      <button
-                        className="video-play-button"
-                        onClick={() => handlePlay(video.id)}
-                        title={t('playlist.play')}
-                      >
-                        <FontAwesomeIcon icon={faPlay} />
-                      </button>
-                    )}
+                    )
+                  })}
+                </div>
+                {videosTotalPages > 1 && (
+                  <div className="playlist-pagination">
+                    <button
+                      type="button"
+                      className="pagination-btn"
+                      onClick={() => setVideosPage((p) => Math.max(1, p - 1))}
+                      disabled={videosPage <= 1}
+                      aria-label={t('playlist.pagination.previous')}
+                    >
+                      {t('playlist.pagination.previous')}
+                    </button>
+                    <span className="pagination-info">
+                      {t('playlist.pagination.pageInfo', {
+                        current: videosPage,
+                        total: videosTotalPages,
+                        count: filteredSourceVideos.length,
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      className="pagination-btn"
+                      onClick={() => setVideosPage((p) => Math.min(videosTotalPages, p + 1))}
+                      disabled={videosPage >= videosTotalPages}
+                      aria-label={t('playlist.pagination.next')}
+                    >
+                      {t('playlist.pagination.next')}
+                    </button>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
+
+      <HistoryDetailModal
+        detail={detailData}
+        onClose={() => setDetailData(null)}
+        onDeleted={refreshAfterDetailDelete}
+        onSaved={setDetailData}
+      />
     </div>
   )
 }

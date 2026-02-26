@@ -56,10 +56,12 @@ Environment variables in `.env`:
 - `OLLAMA_URL`: Ollama service address (default: host.docker.internal:11434)
 - `LLM_MODEL`: LLM model name (default: qwen2.5:8b)
 - `ACCELERATION`: Hardware acceleration type (mlx/cuda/cpu)
+- `TRANSCRIBE_RUNNER_URL`: Optional. If set, the queue sends audio to this GPU transcription service instead of running Whisper locally. See [transcribe_runner/README.md](transcribe_runner/README.md) for running the runner on an NVIDIA GPU machine.
+- `ENABLE_REVERSE_PROXY`, `PROXY_DOMAIN`, `PROXY_HTTP_PORT`: Optional reverse proxy (see below)
 
 ### Public Network Access
 
-To access the application from the public network (without domain binding):
+**Option A: Direct access (no reverse proxy)**
 
 1. **Configure API URL**: Set the `VITE_API_URL` environment variable in your frontend build or runtime:
    ```bash
@@ -67,11 +69,33 @@ To access the application from the public network (without domain binding):
    VITE_API_URL=http://your-public-ip:8000
    ```
 
-2. **Frontend Reverse Proxy**: The frontend will automatically use the configured API URL. If you're using a reverse proxy (like Nginx), configure it to proxy `/api/*` requests to the backend service.
+2. **Firewall**: Ensure ports 8080 (frontend) and 8000 (backend API) are open in your firewall.
 
-3. **Firewall**: Ensure ports 8080 (frontend) and 8000 (backend API) are open in your firewall.
+3. **Access**: Access the application via `http://your-public-ip:8080`
 
-4. **Access**: Access the application via `http://your-public-ip:8080`
+**Option B: Reverse proxy (single entry, optional HTTPS)**
+
+To expose the app via port 80/443 with optional automatic HTTPS, use the included Caddy reverse proxy. Configure in `.env` then start with the proxy profile:
+
+1. **Enable the proxy**: Run with the `proxy` profile:
+   ```bash
+   docker compose --profile proxy up -d
+   ```
+
+2. **With a domain (HTTPS)**:
+   - Set `PROXY_DOMAIN=your.domain.com` in `.env`.
+   - Point DNS for that domain to your server.
+   - Open firewall ports 80 and 443.
+   - Access via `https://your.domain.com` (Caddy obtains and renews TLS certificates automatically).
+
+3. **Without a domain (HTTP by IP)**:
+   - Leave `PROXY_DOMAIN` empty in `.env`.
+   - Open firewall port 80 (or set `PROXY_HTTP_PORT` to another port).
+   - Access via `http://<server-ip>` (or `http://<server-ip>:PROXY_HTTP_PORT` if changed).
+
+4. **Firewall**: For the reverse proxy, open port 80 and, if using a domain, port 443.
+
+Without the proxy profile, behavior is unchanged: use `http://<IP>:8080` as before. For production you can omit the frontend port mapping and expose only the proxy (edit `docker-compose.yml` to remove the frontend `ports` section when using the proxy).
 
 Note: The frontend automatically detects the API URL from the `VITE_API_URL` environment variable. If not set, it defaults to the same origin (useful for reverse proxy setups).
 

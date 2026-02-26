@@ -6,8 +6,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import Header from './Header'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowLeft, faArrowRight, faBookOpen, faCircleInfo } from '@fortawesome/free-solid-svg-icons'
-import { historyApi, HistoryDetail, HistoryItem, playlistApi, PlaylistItemResponse } from '../services/api'
+import { faArrowLeft, faArrowRight, faBookOpen, faCircleInfo, faRedo } from '@fortawesome/free-solid-svg-icons'
+import { historyApi, videoApi, HistoryDetail, HistoryItem, playlistApi, PlaylistItemResponse } from '../services/api'
 import './PlaylistReadingPage.css'
 
 interface PlaylistReadingPageProps {
@@ -45,8 +45,12 @@ const PlaylistReadingPage: React.FC<PlaylistReadingPageProps> = ({ onLogout }) =
   const [detail, setDetail] = useState<HistoryDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [showDetailModal, setShowDetailModal] = useState(false)
+  const [restartingTranscribe, setRestartingTranscribe] = useState<number | null>(null)
+  const [restartingSummary, setRestartingSummary] = useState<number | null>(null)
   const [filterQuery, setFilterQuery] = useState('')
   const [unreadOnly, setUnreadOnly] = useState(false)
+  const READING_LIST_PAGE_SIZE = 50
+  const [readingListPage, setReadingListPage] = useState(1)
 
   useEffect(() => {
     if (pid === null) return
@@ -104,12 +108,36 @@ const PlaylistReadingPage: React.FC<PlaylistReadingPageProps> = ({ onLogout }) =
   const canPrev = selectedIndex > 0
   const canNext = selectedIndex >= 0 && selectedIndex < filteredOrderedIds.length - 1
 
+  const readingListTotalPages = Math.max(1, Math.ceil(filteredOrderedIds.length / READING_LIST_PAGE_SIZE))
+  const paginatedReadingIds = useMemo(() => {
+    const start = (readingListPage - 1) * READING_LIST_PAGE_SIZE
+    return filteredOrderedIds.slice(start, start + READING_LIST_PAGE_SIZE)
+  }, [filteredOrderedIds, readingListPage])
+
   useEffect(() => {
     if (filteredOrderedIds.length === 0) return
     if (selectedId !== null && !filteredOrderedIds.includes(selectedId)) {
       setSelectedId(filteredOrderedIds[0])
     }
   }, [filteredOrderedIds, selectedId])
+
+  useEffect(() => {
+    setReadingListPage(1)
+  }, [filterQuery, unreadOnly])
+
+  useEffect(() => {
+    if (readingListPage > readingListTotalPages) {
+      setReadingListPage(readingListTotalPages)
+    }
+  }, [readingListPage, readingListTotalPages])
+
+  useEffect(() => {
+    if (selectedIndex < 0) return
+    const pageForIndex = Math.floor(selectedIndex / READING_LIST_PAGE_SIZE) + 1
+    if (pageForIndex >= 1 && pageForIndex <= readingListTotalPages) {
+      setReadingListPage(pageForIndex)
+    }
+  }, [selectedIndex, readingListTotalPages])
 
   useEffect(() => {
     if (!selectedId) {
@@ -148,6 +176,50 @@ const PlaylistReadingPage: React.FC<PlaylistReadingPageProps> = ({ onLogout }) =
   const goNext = () => {
     if (!canNext) return
     setSelectedId(filteredOrderedIds[selectedIndex + 1])
+  }
+
+  const handleRestartTranscribe = async () => {
+    if (!detail) return
+    const id = detail.id
+    setRestartingTranscribe(id)
+    try {
+      await videoApi.bulkRestartTranscribe([id])
+      const updated = await historyApi.getDetail(id)
+      setDetail(updated)
+      setMeta((prev) => {
+        const next = new Map(prev)
+        const cur = next.get(id)
+        if (cur) next.set(id, { ...cur, status: updated.status })
+        return next
+      })
+    } catch (err: any) {
+      console.error('Failed to restart transcribe:', err)
+      alert(err.response?.data?.detail || t('history.item.restartTranscribeFailed'))
+    } finally {
+      setRestartingTranscribe(null)
+    }
+  }
+
+  const handleRestartSummary = async () => {
+    if (!detail) return
+    const id = detail.id
+    setRestartingSummary(id)
+    try {
+      await videoApi.bulkRestartSummary([id])
+      const updated = await historyApi.getDetail(id)
+      setDetail(updated)
+      setMeta((prev) => {
+        const next = new Map(prev)
+        const cur = next.get(id)
+        if (cur) next.set(id, { ...cur, status: updated.status })
+        return next
+      })
+    } catch (err: any) {
+      console.error('Failed to restart summary:', err)
+      alert(err.response?.data?.detail || t('history.item.restartSummaryFailed'))
+    } finally {
+      setRestartingSummary(null)
+    }
   }
 
   if (pid === null) {
@@ -204,29 +276,60 @@ const PlaylistReadingPage: React.FC<PlaylistReadingPageProps> = ({ onLogout }) =
                   {orderedIds.length === 0 ? t('playlist.emptyState') : t('playlist.reading.noFilterMatch', '无匹配项')}
                 </div>
               ) : (
-                filteredOrderedIds.map((id) => {
-                  const m = meta.get(id)
-                  const title = m?.title || items.find((x) => x.video_record_id === id)?.title || String(id)
-                  const date = toDateLabel(m?.upload_date || m?.created_at)
-                  const active = id === selectedId
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      className={`reading-item ${active ? 'active' : ''}`}
-                      onClick={() => setSelectedId(id)}
-                      title={title}
-                    >
-                      <div className="reading-item-title">{title}</div>
-                      <div className="reading-item-meta">
-                        <span className="reading-item-date">{date}</span>
-                        {typeof m?.read_count === 'number' && <span className="reading-item-read">👁 {m.read_count}</span>}
-                      </div>
-                    </button>
-                  )
-                })
+                <>
+                  {paginatedReadingIds.map((id) => {
+                    const m = meta.get(id)
+                    const title = m?.title || items.find((x) => x.video_record_id === id)?.title || String(id)
+                    const date = toDateLabel(m?.upload_date || m?.created_at)
+                    const active = id === selectedId
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`reading-item ${active ? 'active' : ''}`}
+                        onClick={() => setSelectedId(id)}
+                        title={title}
+                      >
+                        <div className="reading-item-title">{title}</div>
+                        <div className="reading-item-meta">
+                          <span className="reading-item-date">{date}</span>
+                          {typeof m?.read_count === 'number' && <span className="reading-item-read">👁 {m.read_count}</span>}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </>
               )}
             </div>
+            {readingListTotalPages > 1 && filteredOrderedIds.length > 0 && (
+              <div className="reading-list-pagination">
+                <button
+                  type="button"
+                  className="reading-list-pagination-btn"
+                  onClick={() => setReadingListPage((p) => Math.max(1, p - 1))}
+                  disabled={readingListPage <= 1}
+                  aria-label={t('playlist.pagination.previous')}
+                >
+                  {t('playlist.pagination.previous')}
+                </button>
+                <span className="reading-list-pagination-info">
+                  {t('playlist.pagination.pageInfo', {
+                    current: readingListPage,
+                    total: readingListTotalPages,
+                    count: filteredOrderedIds.length,
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className="reading-list-pagination-btn"
+                  onClick={() => setReadingListPage((p) => Math.min(readingListTotalPages, p + 1))}
+                  disabled={readingListPage >= readingListTotalPages}
+                  aria-label={t('playlist.pagination.next')}
+                >
+                  {t('playlist.pagination.next')}
+                </button>
+              </div>
+            )}
           </aside>
 
           <main className="reading-main">
@@ -306,9 +409,35 @@ const PlaylistReadingPage: React.FC<PlaylistReadingPageProps> = ({ onLogout }) =
           <div className="reading-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="reading-modal-header">
               <div className="reading-modal-title">{detail.title || detail.url}</div>
-              <button className="reading-modal-close" onClick={() => setShowDetailModal(false)}>
-                ×
-              </button>
+              <div className="reading-modal-header-actions">
+                {detail.status === 'completed' && (
+                  <>
+                    <button
+                      type="button"
+                      className="reading-modal-action-btn"
+                      onClick={handleRestartTranscribe}
+                      disabled={restartingTranscribe === detail.id || restartingSummary === detail.id}
+                      title={restartingTranscribe === detail.id ? t('history.item.restartingTranscribe') : t('history.item.restartTranscribe')}
+                    >
+                      <FontAwesomeIcon icon={faRedo} spin={restartingTranscribe === detail.id} />
+                      <span>{restartingTranscribe === detail.id ? t('history.item.restartingTranscribe') : t('history.item.restartTranscribe')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="reading-modal-action-btn"
+                      onClick={handleRestartSummary}
+                      disabled={restartingTranscribe === detail.id || restartingSummary === detail.id}
+                      title={restartingSummary === detail.id ? t('history.item.restartingSummary') : t('history.item.restartSummary')}
+                    >
+                      <FontAwesomeIcon icon={faRedo} spin={restartingSummary === detail.id} />
+                      <span>{restartingSummary === detail.id ? t('history.item.restartingSummary') : t('history.item.restartSummary')}</span>
+                    </button>
+                  </>
+                )}
+                <button className="reading-modal-close" onClick={() => setShowDetailModal(false)}>
+                  ×
+                </button>
+              </div>
             </div>
             <div className="reading-modal-body">
               <div className="reading-modal-section">

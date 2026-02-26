@@ -161,6 +161,7 @@ export interface UserProfileResponse {
   user_id: number
   username: string
   summary_language: string
+  show_feedback_button: boolean
 }
 
 export const authApi = {
@@ -172,6 +173,13 @@ export const authApi = {
   updateSummaryLanguage: async (summaryLanguage: string): Promise<{ summary_language: string }> => {
     const response = await api.patch<{ summary_language: string }>('/api/auth/settings/summary-language', {
       summary_language: summaryLanguage,
+    })
+    return response.data
+  },
+
+  updateFeedbackButton: async (showFeedbackButton: boolean): Promise<{ show_feedback_button: boolean }> => {
+    const response = await api.patch<{ show_feedback_button: boolean }>('/api/auth/settings/feedback-button', {
+      show_feedback_button: showFeedbackButton,
     })
     return response.data
   },
@@ -203,6 +211,24 @@ export const authApi = {
     const response = await api.post<ChangeUsernameResponse>('/api/auth/change-username', {
       new_username: newUsername
     })
+    return response.data
+  },
+}
+
+export interface FeedbackSubmitRequest {
+  page: string
+  display_description?: string | null
+  comment: string
+  screenshot_base64?: string | null
+}
+
+export interface FeedbackSubmitResponse {
+  id: string
+}
+
+export const feedbackApi = {
+  submit: async (data: FeedbackSubmitRequest): Promise<FeedbackSubmitResponse> => {
+    const response = await api.post<FeedbackSubmitResponse>('/api/feedback', data)
     return response.data
   },
 }
@@ -401,6 +427,7 @@ export interface SubscriptionItem {
   status: 'pending' | 'resolved'
   created_at: string
   last_check_at: string | null
+  auto_playlist_id: number | null
 }
 
 export const subscriptionsApi = {
@@ -421,7 +448,7 @@ export const subscriptionsApi = {
     })
     return response.data
   },
-  update: async (id: number, payload: { channel_url?: string }): Promise<SubscriptionItem> => {
+  update: async (id: number, payload: { channel_url?: string; auto_playlist_id?: number | null }): Promise<SubscriptionItem> => {
     const response = await api.patch<SubscriptionItem>(`/api/subscriptions/${id}`, payload)
     return response.data
   },

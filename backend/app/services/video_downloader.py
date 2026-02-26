@@ -120,6 +120,22 @@ def _looks_like_subtitle_only_error(message: str) -> bool:
     return "unable to download" in msg or "429" in msg or "too many requests" in msg
 
 
+def looks_like_membership_only_error(message: str) -> bool:
+    """Detect errors indicating the video is member-only / requires channel membership."""
+    if not message:
+        return False
+    msg = message.lower()
+    return (
+        "member" in msg
+        and (
+            "members-only" in msg
+            or "member-only" in msg
+            or "join this channel" in msg
+            or "join the channel" in msg
+        )
+    )
+
+
 class VideoDownloader:
     """Download YouTube videos using yt-dlp"""
     

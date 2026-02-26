@@ -8,7 +8,7 @@ import logging
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, video, history, playlist, subscriptions
+from app.routers import auth, video, history, playlist, subscriptions, feedback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +22,8 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database...")
     init_db()
     logger.info("Database initialized")
+    # Ensure feedback storage dir exists
+    os.makedirs(settings.feedback_storage_dir, exist_ok=True)
     
     # Whisper loads only in queue worker to keep backend startup fast
     
@@ -56,6 +58,7 @@ app.include_router(video.router)
 app.include_router(history.router)
 app.include_router(playlist.router)
 app.include_router(subscriptions.router)
+app.include_router(feedback.router)
 
 
 def print_access_info():

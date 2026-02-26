@@ -10,6 +10,7 @@ import PlaylistPlayerPage from './components/PlaylistPlayerPage'
 import PlaylistReadingPage from './components/PlaylistReadingPage'
 import TaskStatusPage from './components/TaskStatusPage'
 import SubscriptionsPage from './components/SubscriptionsPage'
+import FeedbackFab from './components/FeedbackFab'
 import './i18n/config'
 import './App.css'
 
@@ -53,6 +54,7 @@ function App() {
 
   return (
     <Router>
+      {isAuthenticated && <FeedbackFab />}
       <Routes>
         <Route
           path="/login"

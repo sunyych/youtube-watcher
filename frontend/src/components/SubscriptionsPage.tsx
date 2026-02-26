@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import Header from './Header'
@@ -15,9 +15,12 @@ import {
   subscriptionsApi,
   SubscriptionItem,
   HistoryItem,
+  HistoryDetail,
   playlistApi,
   PlaylistResponse,
+  historyApi,
 } from '../services/api'
+import HistoryDetailModal from './HistoryDetailModal'
 import './SubscriptionsPage.css'
 
 interface SubscriptionsPageProps {
@@ -43,6 +46,24 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
   const [playlists, setPlaylists] = useState<PlaylistResponse[]>([])
   const [addingToPlaylist, setAddingToPlaylist] = useState(false)
   const [targetPlaylistId, setTargetPlaylistId] = useState<number | null>(null)
+  const [autoPlaylistModalSubId, setAutoPlaylistModalSubId] = useState<number | null>(null)
+  const [autoPlaylistSelectedId, setAutoPlaylistSelectedId] = useState<number | null>(null)
+  const [updatingAutoPlaylist, setUpdatingAutoPlaylist] = useState(false)
+  const [detailData, setDetailData] = useState<HistoryDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const openVideoDetail = async (videoId: number) => {
+    setDetailLoading(true)
+    try {
+      const d = await historyApi.getDetail(videoId, { countRead: true })
+      setDetailData(d)
+    } catch (err) {
+      console.error('Failed to load video detail:', err)
+      alert(t('history.item.loadDetailFailed'))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   const loadSubscriptions = async () => {
     setLoading(true)
@@ -62,24 +83,33 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
   }, [])
 
   useEffect(() => {
+    playlistApi.getPlaylists().then(setPlaylists).catch(() => setPlaylists([]))
+  }, [])
+
+  const loadVideosForExpanded = useCallback(() => {
+    if (expandedId === null) return
+    setVideosLoading(true)
+    subscriptionsApi
+      .getVideos(expandedId)
+      .then((data) => {
+        setVideos(data)
+        setSelectedVideoIds(new Set())
+      })
+      .catch((err) => {
+        console.error('Failed to load subscription videos:', err)
+        alert(t('subscriptions.videosLoadFailed'))
+      })
+      .finally(() => setVideosLoading(false))
+  }, [expandedId, t])
+
+  useEffect(() => {
     if (expandedId !== null) {
-      setVideosLoading(true)
-      subscriptionsApi
-        .getVideos(expandedId)
-        .then((data) => {
-          setVideos(data)
-          setSelectedVideoIds(new Set())
-        })
-        .catch((err) => {
-          console.error('Failed to load subscription videos:', err)
-          alert(t('subscriptions.videosLoadFailed'))
-        })
-        .finally(() => setVideosLoading(false))
+      loadVideosForExpanded()
     } else {
       setVideos([])
       setSelectedVideoIds(new Set())
     }
-  }, [expandedId, t])
+  }, [expandedId, loadVideosForExpanded])
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -187,6 +217,30 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
     }
   }
 
+  const openAutoPlaylistModal = (sub: SubscriptionItem) => {
+    setAutoPlaylistModalSubId(sub.id)
+    setAutoPlaylistSelectedId(sub.auto_playlist_id ?? null)
+  }
+
+  const handleSaveAutoPlaylist = async () => {
+    if (autoPlaylistModalSubId === null) return
+    setUpdatingAutoPlaylist(true)
+    try {
+      await subscriptionsApi.update(autoPlaylistModalSubId, { auto_playlist_id: autoPlaylistSelectedId })
+      await loadSubscriptions()
+      setAutoPlaylistModalSubId(null)
+      setAutoPlaylistSelectedId(null)
+      alert(t('subscriptions.autoPlaylistUpdated'))
+    } catch (err) {
+      console.error('Failed to update auto-playlist:', err)
+      alert(t('subscriptions.updateFailed'))
+    } finally {
+      setUpdatingAutoPlaylist(false)
+    }
+  }
+
+  const getPlaylistName = (id: number) => playlists.find((p) => p.id === id)?.name ?? ''
+
   const formatDate = (s: string | null) => {
     if (!s) return '—'
     try {
@@ -245,6 +299,9 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
                       {sub.status === 'pending' && (
                         <> · <span className="subscriptions-list-item-pending">{t('subscriptions.statusPending')}</span></>
                       )}
+                      {sub.auto_playlist_id != null && (
+                        <> · <span className="subscriptions-auto-playlist-badge">{t('subscriptions.autoPlaylistSet', { name: getPlaylistName(sub.auto_playlist_id) })}</span></>
+                      )}
                     </span>
                   </div>
                   <div className="subscriptions-list-item-actions" onClick={(e) => e.stopPropagation()}>
@@ -271,6 +328,14 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
                       </form>
                     ) : (
                       <>
+                        <button
+                          type="button"
+                          className="subscriptions-btn subscriptions-btn-autoplaylist"
+                          onClick={(e) => { e.stopPropagation(); openAutoPlaylistModal(sub) }}
+                          title={t('subscriptions.autoPlaylist')}
+                        >
+                          <FontAwesomeIcon icon={faList} /> <span className="subscriptions-btn-autoplaylist-label">{t('subscriptions.autoPlaylist')}</span>
+                        </button>
                         <button
                           type="button"
                           className="subscriptions-btn subscriptions-btn-edit"
@@ -326,9 +391,15 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
                                 onChange={() => toggleVideoSelection(v.id)}
                               />
                             </label>
-                            <span className="subscriptions-video-title" title={v.title || undefined}>
+                            <button
+                              type="button"
+                              className="subscriptions-video-title subscriptions-video-title-button"
+                              title={v.title || undefined}
+                              onClick={(e) => { e.stopPropagation(); openVideoDetail(v.id) }}
+                              disabled={detailLoading}
+                            >
                               {v.title || v.url}
-                            </span>
+                            </button>
                             <span className="subscriptions-video-status">{v.status}</span>
                             <button
                               type="button"
@@ -392,6 +463,61 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
           </div>
         </div>
       )}
+
+      {autoPlaylistModalSubId !== null && (
+        <div className="subscriptions-modal-overlay" onClick={() => !updatingAutoPlaylist && setAutoPlaylistModalSubId(null)}>
+          <div className="subscriptions-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{t('subscriptions.autoPlaylistTitle')}</h3>
+            <ul className="subscriptions-playlist-picker">
+              <li>
+                <button
+                  type="button"
+                  className={`subscriptions-playlist-picker-item ${autoPlaylistSelectedId === null ? 'active' : ''}`}
+                  onClick={() => setAutoPlaylistSelectedId(null)}
+                >
+                  {t('subscriptions.autoPlaylistNone')}
+                </button>
+              </li>
+              {playlists.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    className={`subscriptions-playlist-picker-item ${autoPlaylistSelectedId === p.id ? 'active' : ''}`}
+                    onClick={() => setAutoPlaylistSelectedId(p.id)}
+                  >
+                    {p.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="subscriptions-modal-actions">
+              <button
+                type="button"
+                className="subscriptions-modal-cancel"
+                onClick={() => setAutoPlaylistModalSubId(null)}
+                disabled={updatingAutoPlaylist}
+              >
+                {t('history.item.cancel')}
+              </button>
+              <button
+                type="button"
+                className="subscriptions-modal-confirm"
+                onClick={handleSaveAutoPlaylist}
+                disabled={updatingAutoPlaylist}
+              >
+                {updatingAutoPlaylist ? t('history.item.saving') : t('history.item.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <HistoryDetailModal
+        detail={detailData}
+        onClose={() => setDetailData(null)}
+        onDeleted={loadVideosForExpanded}
+        onSaved={setDetailData}
+      />
     </div>
   )
 }

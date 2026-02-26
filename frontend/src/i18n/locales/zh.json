@@ -142,7 +142,13 @@
       "addToPlaylist": "添加到播放列表",
       "addingToPlaylist": "添加中...",
       "addedToPlaylist": "已添加到播放列表",
-      "addToPlaylistFailed": "添加到播放列表失败"
+      "addToPlaylistFailed": "添加到播放列表失败",
+      "restartTranscribe": "重新转写和总结",
+      "restartingTranscribe": "重新转写中...",
+      "restartSummary": "重新总结",
+      "restartingSummary": "重新总结中...",
+      "restartTranscribeFailed": "启动重新转写失败",
+      "restartSummaryFailed": "启动重新总结失败"
     }
   },
   "subscriptions": {
@@ -168,7 +174,12 @@
     "lastCheck": "上次检查",
     "unknownChannel": "未知频道",
     "pendingResolve": "解析中…",
-    "statusPending": "待解析"
+    "statusPending": "待解析",
+    "autoPlaylist": "新视频加入列表",
+    "autoPlaylistTitle": "将该频道新视频自动加入播放列表",
+    "autoPlaylistNone": "不自动加入",
+    "autoPlaylistSet": "新视频 → {{name}}",
+    "autoPlaylistUpdated": "已更新"
   },
   "playlist": {
     "title": "播放列表",
@@ -246,7 +257,12 @@
     "addSelectedFailed": "添加视频失败",
     "addSuccess": "视频已添加到播放列表",
     "addFailed": "添加视频失败",
-    "alreadyInPlaylist": "视频已在播放列表中"
+    "alreadyInPlaylist": "视频已在播放列表中",
+    "pagination": {
+      "previous": "上一页",
+      "next": "下一页",
+      "pageInfo": "第 {{current}} / {{total}} 页（共 {{count}} 条）"
+    }
   },
   "player": {
     "title": "视频播放器",
@@ -310,7 +326,25 @@
       "english": "English",
       "saving": "保存中...",
       "saved": "已保存"
+    },
+    "feedbackButton": {
+      "title": "反馈按钮",
+      "description": "在每页右下角显示浮动反馈按钮。",
+      "label": "显示反馈按钮"
     }
+  },
+  "feedback": {
+    "title": "反馈",
+    "page": "页面",
+    "displayDescription": "当前显示内容（选填）",
+    "displayDescriptionPlaceholder": "简要描述当前页面显示的内容...",
+    "comment": "修改意见或建议",
+    "commentPlaceholder": "描述您希望修改或改进的地方...",
+    "includeScreenshot": "包含截图",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "success": "反馈已提交",
+    "failed": "提交反馈失败"
   },
   "queue": {
     "title": "处理队列",

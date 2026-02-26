@@ -188,6 +188,7 @@ async def test_process_video_task_full_pipeline_mock_success(db, test_user, tmp_
 
     monkeypatch.setattr(queue_worker, "SessionLocal", TestingSessionLocal)
     monkeypatch.setattr(queue_worker.settings, "video_storage_dir", str(tmp_path))
+    monkeypatch.setattr(queue_worker.settings, "transcribe_runner_url", "")  # use local Whisper path
 
     video_id = "jNQXAC9IVRw"
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -315,4 +316,186 @@ async def test_process_video_task_full_pipeline_mock_success(db, test_user, tmp_
     assert call_order.index("transcribe_segments") > call_order.index("run_pipeline")
     assert call_order.index("format_transcript") > call_order.index("transcribe_segments")
     assert call_order.index("generate_summary") > call_order.index("format_transcript")
+
+
+@pytest.mark.asyncio
+async def test_process_video_task_uses_runner_when_configured_failure(db, test_user, tmp_path, monkeypatch):
+    """When TRANSCRIBE_RUNNER_URL is set and runner returns failure, transcript is set to error message."""
+    from app.models.database import VideoRecord, VideoStatus
+    import app.queue_worker as queue_worker
+    from tests.conftest import TestingSessionLocal
+
+    monkeypatch.setattr(queue_worker, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(queue_worker.settings, "video_storage_dir", str(tmp_path))
+    monkeypatch.setattr(queue_worker.settings, "transcribe_runner_url", "http://runner:8765")
+
+    video_id = "runnerFail"
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    (tmp_path / f"{video_id}.wav").write_bytes(b"")  # so convert step has a file to point to
+
+    record = VideoRecord(
+        user_id=test_user.id,
+        url=url,
+        status=VideoStatus.PENDING,
+        progress=0.0,
+        language="en",
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    class DummyDownloader:
+        def __init__(self, storage_dir: str):
+            self.storage_dir = storage_dir
+
+        def download(self, url: str, progress_callback=None):
+            if progress_callback:
+                progress_callback(100.0)
+            (tmp_path / f"{video_id}.mp4").write_bytes(b"")
+            return {
+                "id": video_id,
+                "title": "Test",
+                "duration": 1,
+                "file_path": str(tmp_path / f"{video_id}.mp4"),
+                "thumbnail": None,
+                "description": "",
+                "upload_date": None,
+            }
+
+    class DummyAudioConverter:
+        def __init__(self, storage_dir: str):
+            self.storage_dir = storage_dir
+
+        def convert_to_audio(self, video_path: str):
+            return str(tmp_path / f"{video_id}.wav")
+
+    class DummyThumbnailGenerator:
+        def __init__(self, storage_dir: str):
+            self.storage_dir = storage_dir
+
+        def generate_thumbnail(self, video_path: str, video_id_in: str):
+            return None
+
+    class DummyLLMService:
+        async def format_transcript(self, text: str, language: str = "中文"):
+            return text
+
+        async def generate_summary(self, text: str, language: str = "中文"):
+            return "summary"
+
+        async def generate_keywords(self, transcript: str, title: str, language: str = "中文"):
+            return "k1,k2"
+
+    async def mock_runner_none(audio_path, language, record_id, db, record):
+        return None
+
+    monkeypatch.setattr(queue_worker, "VideoDownloader", DummyDownloader)
+    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
+    monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
+    monkeypatch.setattr(queue_worker, "_transcribe_via_runner", mock_runner_none)
+
+    await queue_worker.process_video_task(record.id)
+
+    check_db = TestingSessionLocal()
+    try:
+        updated = check_db.query(VideoRecord).filter(VideoRecord.id == record.id).first()
+        assert updated is not None
+        assert updated.status == VideoStatus.COMPLETED
+        assert "Transcription unavailable (runner failed" in (updated.transcript or "")
+    finally:
+        check_db.close()
+
+
+@pytest.mark.asyncio
+async def test_process_video_task_uses_runner_when_configured_success(db, test_user, tmp_path, monkeypatch):
+    """When TRANSCRIBE_RUNNER_URL is set and runner returns result, transcript is formatted and saved."""
+    from app.models.database import VideoRecord, VideoStatus
+    import app.queue_worker as queue_worker
+    from tests.conftest import TestingSessionLocal
+
+    monkeypatch.setattr(queue_worker, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(queue_worker.settings, "video_storage_dir", str(tmp_path))
+    monkeypatch.setattr(queue_worker.settings, "transcribe_runner_url", "http://runner:8765")
+
+    video_id = "runnerOk"
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    (tmp_path / f"{video_id}.wav").write_bytes(b"")
+
+    record = VideoRecord(
+        user_id=test_user.id,
+        url=url,
+        status=VideoStatus.PENDING,
+        progress=0.0,
+        language="en",
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    class DummyDownloader:
+        def __init__(self, storage_dir: str):
+            self.storage_dir = storage_dir
+
+        def download(self, url: str, progress_callback=None):
+            if progress_callback:
+                progress_callback(100.0)
+            (tmp_path / f"{video_id}.mp4").write_bytes(b"")
+            return {
+                "id": video_id,
+                "title": "Test",
+                "duration": 1,
+                "file_path": str(tmp_path / f"{video_id}.mp4"),
+                "thumbnail": None,
+                "description": "",
+                "upload_date": None,
+            }
+
+    class DummyAudioConverter:
+        def __init__(self, storage_dir: str):
+            self.storage_dir = storage_dir
+
+        def convert_to_audio(self, video_path: str):
+            return str(tmp_path / f"{video_id}.wav")
+
+    class DummyThumbnailGenerator:
+        def __init__(self, storage_dir: str):
+            self.storage_dir = storage_dir
+
+        def generate_thumbnail(self, video_path: str, video_id_in: str):
+            return None
+
+    class DummyLLMService:
+        async def format_transcript(self, text: str, language: str = "中文"):
+            return f"formatted: {text}"
+
+        async def generate_summary(self, text: str, language: str = "中文"):
+            return "summary"
+
+        async def generate_keywords(self, transcript: str, title: str, language: str = "中文"):
+            return "k1,k2"
+
+    async def mock_runner_ok(audio_path, language, record_id, db, record):
+        return {"text": "raw from runner", "language": "en", "segments": []}
+
+    monkeypatch.setattr(queue_worker, "VideoDownloader", DummyDownloader)
+    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
+    monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
+    monkeypatch.setattr(queue_worker, "_transcribe_via_runner", mock_runner_ok)
+
+    await queue_worker.process_video_task(record.id)
+
+    check_db = TestingSessionLocal()
+    try:
+        updated = check_db.query(VideoRecord).filter(VideoRecord.id == record.id).first()
+        assert updated is not None
+        assert updated.status == VideoStatus.COMPLETED
+        assert updated.transcript == "formatted: raw from runner"
+        assert updated.language == "en"
+    finally:
+        check_db.close()
+
+    assert (tmp_path / f"{video_id}.txt").exists()
+    assert "formatted: raw from runner" in (tmp_path / f"{video_id}.txt").read_text(encoding="utf-8")
 

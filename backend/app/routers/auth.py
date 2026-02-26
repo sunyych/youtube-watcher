@@ -201,19 +201,25 @@ class UserProfileResponse(BaseModel):
     user_id: int
     username: str
     summary_language: str
+    show_feedback_button: bool
 
 
 class UpdateSummaryLanguageRequest(BaseModel):
     summary_language: str
 
 
+class UpdateFeedbackButtonRequest(BaseModel):
+    show_feedback_button: bool
+
+
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(user: User = Depends(get_current_user)):
-    """Get current user profile including summary language preference."""
+    """Get current user profile including summary language and feedback button preference."""
     return UserProfileResponse(
         user_id=user.id,
         username=user.username,
         summary_language=user.summary_language or "中文",
+        show_feedback_button=getattr(user, "show_feedback_button", True),
     )
 
 
@@ -229,6 +235,19 @@ async def update_summary_language(
     db.commit()
     db.refresh(user)
     return {"summary_language": user.summary_language}
+
+
+@router.patch("/settings/feedback-button")
+async def update_feedback_button(
+    request: UpdateFeedbackButtonRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update whether to show the floating feedback button on the frontend."""
+    user.show_feedback_button = request.show_feedback_button
+    db.commit()
+    db.refresh(user)
+    return {"show_feedback_button": user.show_feedback_button}
 
 
 @router.post("/change-password")

@@ -1,5 +1,5 @@
 """Database models"""
-from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Float, Enum as SQLEnum, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Float, Boolean, Enum as SQLEnum, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -18,6 +18,12 @@ class VideoStatus(str, enum.Enum):
     SUMMARIZING = "summarizing"
     COMPLETED = "completed"
     FAILED = "failed"
+    UNAVAILABLE = "unavailable"  # e.g. member-only, cannot download; excluded from failed list
+
+
+def _video_status_values(enum_class):
+    """DB: other statuses as names (PENDING, FAILED); UNAVAILABLE as 'unavailable'."""
+    return [e.name if e != VideoStatus.UNAVAILABLE else "unavailable" for e in enum_class]
 
 
 class User(Base):
@@ -30,7 +36,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # Preferred language for generated summaries (e.g. 中文, English). Default 中文.
     summary_language = Column(String, nullable=True, default="中文")
-    
+    # Show floating feedback button on frontend. Default True.
+    show_feedback_button = Column(Boolean, default=True, nullable=False)
+
     # Relationships
     video_records = relationship("VideoRecord", back_populates="user")
     playlists = relationship("Playlist", back_populates="user")
@@ -41,6 +49,7 @@ class ChannelSubscription(Base):
     """User's subscription to a YouTube channel for auto-downloading new videos.
     status='pending': only channel_url stored; queue will resolve to channel_id/title.
     status='resolved': channel_id and channel_title set, included in subscription check.
+    auto_playlist_id: when set, new videos from this channel are auto-added to this playlist.
     """
     __tablename__ = "channel_subscriptions"
     # Uniqueness: partial indexes in migration (user_id, channel_id) when resolved, (user_id, channel_url) when pending
@@ -53,10 +62,12 @@ class ChannelSubscription(Base):
     status = Column(String, nullable=False, default="resolved", index=True)  # 'pending' | 'resolved'
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_check_at = Column(DateTime(timezone=True), nullable=True)
+    auto_playlist_id = Column(Integer, ForeignKey("playlists.id"), nullable=True, index=True)
     
     # Relationships
     user = relationship("User", back_populates="channel_subscriptions")
     video_records = relationship("VideoRecord", back_populates="subscription")
+    auto_playlist = relationship("Playlist", foreign_keys=[auto_playlist_id])
 
 
 class VideoRecord(Base):
@@ -72,7 +83,11 @@ class VideoRecord(Base):
     summary = Column(Text, nullable=True)
     language = Column(String, nullable=True)
     keywords = Column(Text, nullable=True)  # Comma-separated keywords for search
-    status = Column(SQLEnum(VideoStatus), default=VideoStatus.PENDING, nullable=False)
+    status = Column(
+        SQLEnum(VideoStatus, values_callable=_video_status_values),
+        default=VideoStatus.PENDING,
+        nullable=False,
+    )
     progress = Column(Float, default=0.0, nullable=False)  # 0-100
     queue_position = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)

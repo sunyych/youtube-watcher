@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Header from './Header'
-import { historyApi, videoApi, TaskItem } from '../services/api'
+import { historyApi, videoApi, TaskItem, HistoryDetail } from '../services/api'
+import HistoryDetailModal from './HistoryDetailModal'
 import './TaskStatusPage.css'
 
 type TabKey =
@@ -12,12 +13,13 @@ type TabKey =
   | 'summarizing'
   | 'completed'
   | 'failed'
+  | 'unavailable'
 
 interface TaskStatusPageProps {
   onLogout: () => void
 }
 
-const ALL_STATUSES = ['pending', 'downloading', 'converting', 'transcribing', 'summarizing', 'completed', 'failed']
+const ALL_STATUSES = ['pending', 'downloading', 'converting', 'transcribing', 'summarizing', 'completed', 'failed', 'unavailable']
 
 const TAB_DEFS: Array<{ key: TabKey; label: string; statuses: string[] }> = [
   { key: 'all', label: '全部', statuses: ALL_STATUSES },
@@ -28,6 +30,7 @@ const TAB_DEFS: Array<{ key: TabKey; label: string; statuses: string[] }> = [
   { key: 'summarizing', label: '总结中', statuses: ['summarizing'] },
   { key: 'completed', label: '已完成', statuses: ['completed'] },
   { key: 'failed', label: '失败', statuses: ['failed'] },
+  { key: 'unavailable', label: '无法下载', statuses: ['unavailable'] },
 ]
 
 const PAGE_SIZE = 50
@@ -40,6 +43,7 @@ const STATUS_LABELS: Record<string, string> = {
   summarizing: '总结中',
   completed: '已完成',
   failed: '失败',
+  unavailable: '无法下载',
 }
 
 function formatApiError(e: any): string {
@@ -66,6 +70,21 @@ const TaskStatusPage: React.FC<TaskStatusPageProps> = ({ onLogout }) => {
   const [skip, setSkip] = useState(0)
 
   const [selected, setSelected] = useState<Record<number, boolean>>({})
+  const [detailData, setDetailData] = useState<HistoryDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const openVideoDetail = async (id: number) => {
+    setDetailLoading(true)
+    try {
+      const d = await historyApi.getDetail(id, { countRead: true })
+      setDetailData(d)
+    } catch (e: any) {
+      console.error('Failed to load detail:', e)
+      alert(formatApiError(e))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   const tab = useMemo(() => TAB_DEFS.find((t) => t.key === activeTab)!, [activeTab])
   const selectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[Number(k)]).map(Number), [selected])
@@ -250,10 +269,18 @@ const TaskStatusPage: React.FC<TaskStatusPageProps> = ({ onLogout }) => {
                   />
                 </td>
                 <td>
-                  <div className="task-title">
-                    #{it.id} {it.title || '(无标题)'}
-                  </div>
-                  <div className="task-url">{it.url}</div>
+                  <button
+                    type="button"
+                    className="task-title-button"
+                    onClick={(e) => { e.preventDefault(); openVideoDetail(it.id) }}
+                    disabled={detailLoading}
+                    title="查看详情"
+                  >
+                    <div className="task-title">
+                      #{it.id} {it.title || '(无标题)'}
+                    </div>
+                    <div className="task-url">{it.url}</div>
+                  </button>
                   {it.error_message && <div className="task-error">{it.error_message}</div>}
                 </td>
                 <td>
@@ -285,6 +312,13 @@ const TaskStatusPage: React.FC<TaskStatusPageProps> = ({ onLogout }) => {
           下一页
         </button>
       </div>
+
+      <HistoryDetailModal
+        detail={detailData}
+        onClose={() => setDetailData(null)}
+        onDeleted={() => load(skip)}
+        onSaved={setDetailData}
+      />
     </div>
   )
 }

@@ -7,7 +7,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel, HttpUrl
 
 from app.database import get_db
-from app.models.database import User, ChannelSubscription, VideoRecord
+from app.models.database import User, ChannelSubscription, VideoRecord, Playlist
 from app.routers.auth import get_current_user
 from app.routers.history import HistoryItem
 import logging
@@ -23,6 +23,7 @@ class SubscribeRequest(BaseModel):
 
 class UpdateSubscriptionRequest(BaseModel):
     channel_url: Optional[HttpUrl] = None
+    auto_playlist_id: Optional[int] = None
 
 
 class SubscriptionItem(BaseModel):
@@ -33,6 +34,7 @@ class SubscriptionItem(BaseModel):
     status: str  # 'pending' | 'resolved'
     created_at: str
     last_check_at: Optional[str]
+    auto_playlist_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -47,6 +49,7 @@ def _subscription_to_item(sub: ChannelSubscription) -> SubscriptionItem:
         status=sub.status or "resolved",
         created_at=sub.created_at.isoformat() if sub.created_at else "",
         last_check_at=sub.last_check_at.isoformat() if sub.last_check_at else None,
+        auto_playlist_id=getattr(sub, "auto_playlist_id", None),
     )
 
 
@@ -154,12 +157,23 @@ async def update_subscription(
     )
     if not sub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
-    if request.channel_url:
+    if request.channel_url is not None:
         url_str = str(request.channel_url).strip()
         sub.channel_url = url_str
         sub.status = "pending"
         sub.channel_id = None
         sub.channel_title = None
+    if "auto_playlist_id" in request.model_dump(exclude_unset=True):
+        if request.auto_playlist_id is None:
+            sub.auto_playlist_id = None
+        else:
+            playlist = db.query(Playlist).filter(
+                Playlist.id == request.auto_playlist_id,
+                Playlist.user_id == user.id,
+            ).first()
+            if not playlist:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
+            sub.auto_playlist_id = playlist.id
     db.commit()
     db.refresh(sub)
     logger.info("User %s updated subscription %s (pending resolve)", user.id, subscription_id)

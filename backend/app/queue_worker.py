@@ -7,16 +7,19 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
+
+import httpx
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from sqlalchemy import func
 from app.database import init_db, SessionLocal
 from app.models.database import VideoRecord, VideoStatus, PlaylistItem, User, ChannelSubscription
 from app.config import settings
 from app.services.channel_service import fetch_latest_video_urls, resolve_channel
-from app.services.video_downloader import VideoDownloader, VideoDownloadError
+from app.services.video_downloader import VideoDownloader, VideoDownloadError, looks_like_membership_only_error
 from app.services.audio_converter import AudioConverter
 from app.services.audio_pipeline import run_pipeline
 from app.services.whisper_service import WhisperService
@@ -227,6 +230,78 @@ def get_whisper_service():
         return None
 
 
+async def _transcribe_via_runner(
+    audio_path: str,
+    language: Optional[str],
+    record_id: int,
+    db,
+    record,
+) -> Optional[Dict[str, Any]]:
+    """Upload WAV to transcribe_runner, poll until done. Returns result dict or None on failure."""
+    base_url = (getattr(settings, "transcribe_runner_url", None) or "").strip().rstrip("/")
+    if not base_url:
+        return None
+    timeout_s = getattr(settings, "transcribe_runner_timeout_seconds", 7200)
+    poll_interval_s = getattr(settings, "transcribe_runner_poll_interval_seconds", 30)
+    path = Path(audio_path)
+    if not path.exists():
+        logger.error(f"Audio file not found for record {record_id}: {audio_path}")
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(path, "rb") as f:
+                files = {"file": (path.name, f, "audio/wav")}
+                data = {} if not language else {"language": language}
+                r = await client.post(f"{base_url}/transcribe", files=files, data=data)
+            r.raise_for_status()
+            body = r.json()
+            job_id = body.get("job_id")
+            if not job_id:
+                logger.error(f"Runner did not return job_id for record {record_id}")
+                return None
+        logger.info(f"Record {record_id}: transcribe job submitted, job_id={job_id}, polling up to {timeout_s}s")
+        started = datetime.now(timezone.utc)
+        while (datetime.now(timezone.utc) - started).total_seconds() < timeout_s:
+            await asyncio.sleep(poll_interval_s)
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    r = await client.get(f"{base_url}/transcribe/{job_id}")
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                logger.warning(f"Record {record_id}: poll error {e}, continuing")
+                try:
+                    db.refresh(record)
+                    record.updated_at = datetime.now(timezone.utc)
+                    db.commit()
+                except Exception:
+                    pass
+                continue
+            status = data.get("status")
+            if status == "completed":
+                return {
+                    "text": data.get("text", ""),
+                    "language": data.get("language", "unknown"),
+                    "segments": data.get("segments", []),
+                }
+            if status == "failed":
+                logger.error(f"Record {record_id}: runner job failed: {data.get('error', 'unknown')}")
+                return None
+            progress = data.get("progress", 0.0)
+            try:
+                db.refresh(record)
+                record.updated_at = datetime.now(timezone.utc)
+                record.progress = 60.0 + (progress * 30.0)
+                db.commit()
+            except Exception as e:
+                logger.debug(f"Progress update failed: {e}")
+        logger.error(f"Record {record_id}: transcribe runner timeout after {timeout_s}s")
+        return None
+    except Exception as e:
+        logger.exception(f"Record {record_id}: transcribe via runner failed: {e}")
+        return None
+
+
 async def download_only_task(record_id: int):
     """
     Download stage only.
@@ -364,8 +439,13 @@ async def download_only_task(record_id: int):
         logger.error(f"[download] Error downloading record {record_id}: {e}", exc_info=True)
         record = db.query(VideoRecord).filter(VideoRecord.id == record_id).first()
         if record:
-            record.status = VideoStatus.FAILED
-            record.error_message = str(e)
+            err_msg = str(e)
+            if looks_like_membership_only_error(err_msg):
+                record.status = VideoStatus.UNAVAILABLE
+                record.error_message = err_msg
+            else:
+                record.status = VideoStatus.FAILED
+                record.error_message = err_msg
             db.commit()
     finally:
         db.close()
@@ -382,8 +462,8 @@ async def process_video_task(record_id: int):
             logger.error(f"Record {record_id} not found")
             return
         
-        # Skip if already completed or failed
-        if record.status in [VideoStatus.COMPLETED, VideoStatus.FAILED]:
+        # Skip if already completed, failed, or unavailable (e.g. member-only)
+        if record.status in [VideoStatus.COMPLETED, VideoStatus.FAILED, VideoStatus.UNAVAILABLE]:
             logger.info(f"Record {record_id} is already {record.status}, skipping")
             return
         
@@ -739,91 +819,136 @@ async def process_video_task(record_id: int):
                     except Exception as e:
                         logger.warning(f"Error updating transcription progress: {e}")
 
-            try:
-                if whisper_service is None:
-                    raise RuntimeError("Whisper service is not available.")
-            except Exception as e:
-                logger.warning(f"Transcription unavailable: {e}")
-                error_message = f"Transcription unavailable: {e}"
-                record.transcript = error_message
-                record.language = record.language or "unknown"
-                video_id = Path(audio_path).stem
-                transcript_file_path = Path(settings.video_storage_dir) / f"{video_id}.txt"
-                transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(transcript_file_path, 'w', encoding='utf-8') as f:
-                    f.write(error_message)
-                record.transcript_file_path = str(transcript_file_path)
-                record.progress = 90.0
-                db.commit()
-            else:
-                # Pipeline: resample → denoise → VAD → slice (50% → 55% → 60%)
-                record.progress = 55.0
-                db.commit()
-                loop = asyncio.get_event_loop()
-                try:
-                    audio_chunks, chunk_metadata = await loop.run_in_executor(
-                        DOWNLOAD_EXECUTOR,
-                        lambda: run_pipeline(audio_path),
-                    )
-                except Exception as e:
-                    logger.error(f"Audio pipeline failed for record {record_id}: {e}", exc_info=True)
-                    raise
-                record.progress = 60.0
-                db.commit()
-
-                if not audio_chunks or not chunk_metadata:
-                    logger.info(f"No speech detected for record {record_id}, using placeholder transcript")
-                    transcript_text = ""
+            runner_url = (getattr(settings, "transcribe_runner_url", None) or "").strip()
+            if runner_url:
+                # Remote GPU runner: upload WAV, poll until done
+                logger.info(f"Using transcribe runner for record {record_id}: {runner_url}")
+                transcript_result = await _transcribe_via_runner(
+                    audio_path, record.language, record_id, db, record
+                )
+                if transcript_result is None:
+                    error_message = "Transcription unavailable (runner failed or timeout)."
+                    record.transcript = error_message
                     record.language = record.language or "unknown"
+                    video_id = Path(audio_path).stem
+                    transcript_file_path = Path(settings.video_storage_dir) / f"{video_id}.txt"
+                    transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(transcript_file_path, "w", encoding="utf-8") as f:
+                        f.write(error_message)
+                    record.transcript_file_path = str(transcript_file_path)
+                    record.progress = 90.0
+                    db.commit()
                 else:
-                    logger.info(
-                        f"Starting Whisper segment transcription for record {record_id} "
-                        f"(chunks={len(audio_chunks)}, audio duration: {audio_duration/60:.2f} min)" if audio_duration
-                        else f"Starting Whisper segment transcription for record {record_id} (chunks={len(audio_chunks)})"
-                    )
+                    transcript_text = transcript_result.get("text") or ""
+                    record.language = transcript_result.get("language", record.language)
+                    record.progress = 90.0
+                    db.commit()
                     try:
-                        def _run_transcribe_segments():
-                            return whisper_service.transcribe_segments(
-                                audio_chunks,
-                                chunk_metadata,
-                                language=record.language,
-                                progress_callback=transcribe_progress,
-                                sample_rate=getattr(settings, "audio_target_sample_rate", 16000),
-                            )
-                        transcript_result = await loop.run_in_executor(
-                            DOWNLOAD_EXECUTOR,
-                            _run_transcribe_segments,
+                        logger.info(f"Formatting transcript for record {record_id}...")
+                        formatted_transcript = await llm_service.format_transcript(
+                            transcript_text,
+                            language=record.language or "中文"
                         )
-                        logger.info(f"Transcription completed for record {record_id}, segments={len(transcript_result.get('segments', []))}")
+                        record.transcript = formatted_transcript
+                        logger.info(f"Transcript formatted successfully for record {record_id}")
                     except Exception as e:
-                        logger.error(f"Transcription failed for record {record_id}: {e}", exc_info=True)
-                        raise
-                    transcript_text = transcript_result.get('text') or ""
-                    record.language = transcript_result.get('language', record.language)
-
-                # Format transcript with LLM (Qwen3: punctuation and paragraphs)
-                record.progress = 90.0
-                db.commit()
+                        logger.warning(f"Failed to format transcript for record {record_id}: {e}. Using original transcript.")
+                        record.transcript = transcript_text
+                    video_id = Path(audio_path).stem
+                    transcript_file_path = Path(settings.video_storage_dir) / f"{video_id}.txt"
+                    transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(transcript_file_path, "w", encoding="utf-8") as f:
+                        f.write(record.transcript)
+                    record.transcript_file_path = str(transcript_file_path)
+                    record.progress = 95.0
+                    db.commit()
+            else:
+                # Local: pipeline + Whisper
                 try:
-                    logger.info(f"Formatting transcript for record {record_id}...")
-                    formatted_transcript = await llm_service.format_transcript(
-                        transcript_text,
-                        language=record.language or "中文"
-                    )
-                    record.transcript = formatted_transcript
-                    logger.info(f"Transcript formatted successfully for record {record_id}")
+                    if whisper_service is None:
+                        raise RuntimeError("Whisper service is not available.")
                 except Exception as e:
-                    logger.warning(f"Failed to format transcript for record {record_id}: {e}. Using original transcript.")
-                    record.transcript = transcript_text
+                    logger.warning(f"Transcription unavailable: {e}")
+                    error_message = f"Transcription unavailable: {e}"
+                    record.transcript = error_message
+                    record.language = record.language or "unknown"
+                    video_id = Path(audio_path).stem
+                    transcript_file_path = Path(settings.video_storage_dir) / f"{video_id}.txt"
+                    transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(transcript_file_path, 'w', encoding='utf-8') as f:
+                        f.write(error_message)
+                    record.transcript_file_path = str(transcript_file_path)
+                    record.progress = 90.0
+                    db.commit()
+                else:
+                    # Pipeline: resample → denoise → VAD → slice (50% → 55% → 60%)
+                    record.progress = 55.0
+                    db.commit()
+                    loop = asyncio.get_event_loop()
+                    try:
+                        audio_chunks, chunk_metadata = await loop.run_in_executor(
+                            DOWNLOAD_EXECUTOR,
+                            lambda: run_pipeline(audio_path),
+                        )
+                    except Exception as e:
+                        logger.error(f"Audio pipeline failed for record {record_id}: {e}", exc_info=True)
+                        raise
+                    record.progress = 60.0
+                    db.commit()
 
-                video_id = Path(audio_path).stem
-                transcript_file_path = Path(settings.video_storage_dir) / f"{video_id}.txt"
-                transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(transcript_file_path, 'w', encoding='utf-8') as f:
-                    f.write(record.transcript)
-                record.transcript_file_path = str(transcript_file_path)
-                record.progress = 95.0
-                db.commit()
+                    if not audio_chunks or not chunk_metadata:
+                        logger.info(f"No speech detected for record {record_id}, using placeholder transcript")
+                        transcript_text = ""
+                        record.language = record.language or "unknown"
+                    else:
+                        logger.info(
+                            f"Starting Whisper segment transcription for record {record_id} "
+                            f"(chunks={len(audio_chunks)}, audio duration: {audio_duration/60:.2f} min)" if audio_duration
+                            else f"Starting Whisper segment transcription for record {record_id} (chunks={len(audio_chunks)})"
+                        )
+                        try:
+                            def _run_transcribe_segments():
+                                return whisper_service.transcribe_segments(
+                                    audio_chunks,
+                                    chunk_metadata,
+                                    language=record.language,
+                                    progress_callback=transcribe_progress,
+                                    sample_rate=getattr(settings, "audio_target_sample_rate", 16000),
+                                )
+                            transcript_result = await loop.run_in_executor(
+                                DOWNLOAD_EXECUTOR,
+                                _run_transcribe_segments,
+                            )
+                            logger.info(f"Transcription completed for record {record_id}, segments={len(transcript_result.get('segments', []))}")
+                        except Exception as e:
+                            logger.error(f"Transcription failed for record {record_id}: {e}", exc_info=True)
+                            raise
+                        transcript_text = transcript_result.get('text') or ""
+                        record.language = transcript_result.get('language', record.language)
+
+                    # Format transcript with LLM (Qwen3: punctuation and paragraphs)
+                    record.progress = 90.0
+                    db.commit()
+                    try:
+                        logger.info(f"Formatting transcript for record {record_id}...")
+                        formatted_transcript = await llm_service.format_transcript(
+                            transcript_text,
+                            language=record.language or "中文"
+                        )
+                        record.transcript = formatted_transcript
+                        logger.info(f"Transcript formatted successfully for record {record_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to format transcript for record {record_id}: {e}. Using original transcript.")
+                        record.transcript = transcript_text
+
+                    video_id = Path(audio_path).stem
+                    transcript_file_path = Path(settings.video_storage_dir) / f"{video_id}.txt"
+                    transcript_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(transcript_file_path, 'w', encoding='utf-8') as f:
+                        f.write(record.transcript)
+                    record.transcript_file_path = str(transcript_file_path)
+                    record.progress = 95.0
+                    db.commit()
         else:
             # Transcript already exists, just update progress
             if record.progress < 95.0:
@@ -884,8 +1009,13 @@ async def process_video_task(record_id: int):
         logger.error(f"Error processing video record {record_id}: {e}", exc_info=True)
         record = db.query(VideoRecord).filter(VideoRecord.id == record_id).first()
         if record:
-            record.status = VideoStatus.FAILED
-            record.error_message = str(e)
+            err_msg = str(e)
+            if looks_like_membership_only_error(err_msg):
+                record.status = VideoStatus.UNAVAILABLE
+                record.error_message = err_msg
+            else:
+                record.status = VideoStatus.FAILED
+                record.error_message = err_msg
             db.commit()
     finally:
         db.close()
@@ -992,6 +1122,13 @@ async def _subscription_check_task():
                     ),
                     timeout=RESOLVE_CHANNEL_TIMEOUT_SECONDS,
                 )
+                auto_playlist_id = getattr(sub, "auto_playlist_id", None)
+                next_position = None
+                if auto_playlist_id:
+                    max_pos = db.query(func.max(PlaylistItem.position)).filter(
+                        PlaylistItem.playlist_id == auto_playlist_id
+                    ).scalar() or 0
+                    next_position = max_pos + 1
                 added = 0
                 for url in urls:
                     existing = (
@@ -1008,6 +1145,14 @@ async def _subscription_check_task():
                             progress=0.0,
                         )
                         db.add(record)
+                        db.flush()
+                        if auto_playlist_id and next_position is not None:
+                            db.add(PlaylistItem(
+                                playlist_id=auto_playlist_id,
+                                video_record_id=record.id,
+                                position=next_position,
+                            ))
+                            next_position += 1
                         added += 1
                 if added:
                     logger.info("Subscription %s: enqueued %d new video(s) for download", sub.id, added)

@@ -1,0 +1,3 @@
+# Reference: actual config is generated at runtime by entrypoint.sh from PROXY_DOMAIN.
+# With domain set:    your.domain.com { reverse_proxy frontend:80 }  (Caddy auto HTTPS)
+# With domain empty:  :80 { reverse_proxy frontend:80 }               (HTTP only, access by IP)

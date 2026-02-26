@@ -142,7 +142,13 @@
       "addToPlaylist": "Add to playlist",
       "addingToPlaylist": "Adding...",
       "addedToPlaylist": "Added to playlist",
-      "addToPlaylistFailed": "Failed to add to playlist"
+      "addToPlaylistFailed": "Failed to add to playlist",
+      "restartTranscribe": "Re-transcribe & summarize",
+      "restartingTranscribe": "Re-transcribing...",
+      "restartSummary": "Re-summarize",
+      "restartingSummary": "Re-summarizing...",
+      "restartTranscribeFailed": "Failed to start re-transcribe",
+      "restartSummaryFailed": "Failed to start re-summarize"
     }
   },
   "subscriptions": {
@@ -168,7 +174,12 @@
     "lastCheck": "Last check",
     "unknownChannel": "Unknown channel",
     "pendingResolve": "Resolving...",
-    "statusPending": "Pending"
+    "statusPending": "Pending",
+    "autoPlaylist": "Auto-add to playlist",
+    "autoPlaylistTitle": "Auto-add this channel's new videos to a playlist",
+    "autoPlaylistNone": "Don't auto-add",
+    "autoPlaylistSet": "New videos → {{name}}",
+    "autoPlaylistUpdated": "Updated"
   },
   "playlist": {
     "title": "Playlist",
@@ -246,7 +257,12 @@
     "addSelectedFailed": "Failed to add videos",
     "addSuccess": "Video added to playlist",
     "addFailed": "Failed to add video",
-    "alreadyInPlaylist": "Video is already in playlist"
+    "alreadyInPlaylist": "Video is already in playlist",
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "pageInfo": "Page {{current}} of {{total}} ({{count}} items)"
+    }
   },
   "player": {
     "title": "Video Player",
@@ -310,7 +326,25 @@
       "english": "English",
       "saving": "Saving...",
       "saved": "Saved"
+    },
+    "feedbackButton": {
+      "title": "Feedback button",
+      "description": "Show a floating feedback button in the bottom-right corner of every page.",
+      "label": "Show feedback button"
     }
+  },
+  "feedback": {
+    "title": "Feedback",
+    "page": "Page",
+    "displayDescription": "What you see (optional)",
+    "displayDescriptionPlaceholder": "Briefly describe what is on screen...",
+    "comment": "Your feedback or suggestions",
+    "commentPlaceholder": "Describe what you would like to change or improve...",
+    "includeScreenshot": "Include screenshot",
+    "submit": "Submit",
+    "submitting": "Submitting...",
+    "success": "Feedback submitted successfully",
+    "failed": "Failed to submit feedback"
   },
   "queue": {
     "title": "Processing Queue",

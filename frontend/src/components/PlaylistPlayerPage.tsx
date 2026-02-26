@@ -136,6 +136,21 @@ const PlaylistPlayerPage: React.FC<PlaylistPlayerPageProps> = () => {
     return items.findIndex((it) => it.video_record_id === vid)
   }, [items, vid])
 
+  const PLAYLIST_PANEL_PAGE_SIZE = 30
+  const [panelPage, setPanelPage] = useState(1)
+  const panelTotalPages = Math.max(1, Math.ceil(items.length / PLAYLIST_PANEL_PAGE_SIZE))
+  const paginatedPanelItems = useMemo(() => {
+    const start = (panelPage - 1) * PLAYLIST_PANEL_PAGE_SIZE
+    return items.slice(start, start + PLAYLIST_PANEL_PAGE_SIZE)
+  }, [items, panelPage])
+
+  // When current video changes, switch to the page that contains it
+  useEffect(() => {
+    if (currentIndex < 0) return
+    const pageForIndex = Math.floor(currentIndex / PLAYLIST_PANEL_PAGE_SIZE) + 1
+    setPanelPage((p) => (pageForIndex >= 1 && pageForIndex <= panelTotalPages ? pageForIndex : p))
+  }, [currentIndex, panelTotalPages])
+
   const canPlayPrevious = currentIndex > 0
   const canPlayNext = currentIndex >= 0 && currentIndex < items.length - 1
 
@@ -478,7 +493,7 @@ const PlaylistPlayerPage: React.FC<PlaylistPlayerPageProps> = () => {
               <div className="playlist-panel-count">{items.length}</div>
             </div>
             <div className="playlist-panel-list">
-              {items.map((it) => {
+              {paginatedPanelItems.map((it) => {
                 const active = vid !== null && it.video_record_id === vid
                 const playable = isPlayableStatus(it.status)
                 return (
@@ -501,6 +516,35 @@ const PlaylistPlayerPage: React.FC<PlaylistPlayerPageProps> = () => {
                 )
               })}
             </div>
+            {panelTotalPages > 1 && (
+              <div className="playlist-panel-pagination">
+                <button
+                  type="button"
+                  className="playlist-panel-pagination-btn"
+                  onClick={() => setPanelPage((p) => Math.max(1, p - 1))}
+                  disabled={panelPage <= 1}
+                  aria-label={t('playlist.pagination.previous')}
+                >
+                  <FontAwesomeIcon icon={faChevronLeft} />
+                </button>
+                <span className="playlist-panel-pagination-info">
+                  {t('playlist.pagination.pageInfo', {
+                    current: panelPage,
+                    total: panelTotalPages,
+                    count: items.length,
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className="playlist-panel-pagination-btn"
+                  onClick={() => setPanelPage((p) => Math.min(panelTotalPages, p + 1))}
+                  disabled={panelPage >= panelTotalPages}
+                  aria-label={t('playlist.pagination.next')}
+                >
+                  <FontAwesomeIcon icon={faChevronRight} />
+                </button>
+              </div>
+            )}
           </aside>
         )}
       </div>

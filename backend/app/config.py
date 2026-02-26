@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     
     # Hardware Acceleration
     acceleration: str = "cpu"  # mlx, cuda, cpu
+
+    # Optional remote transcribe runner (GPU). If set, queue sends WAV to runner and polls for result.
+    transcribe_runner_url: Optional[str] = None  # e.g. http://gpu-host:8765
+    transcribe_runner_timeout_seconds: int = 7200  # max wait for one job (e.g. 2h)
+    transcribe_runner_poll_interval_seconds: int = 30
     
     # Database
     postgres_user: str = "youtube_watcher"
@@ -39,6 +44,7 @@ class Settings(BaseSettings):
     # Data Directories
     video_storage_dir: str = "./data/videos"
     postgres_data_dir: str = "./data/postgres"
+    feedback_storage_dir: str = "./data/feedback"
 
     # yt-dlp / YouTube download
     # Extra retry wrapper around yt-dlp extraction (in addition to yt-dlp's internal retries)

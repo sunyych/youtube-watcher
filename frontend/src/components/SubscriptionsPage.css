@@ -24,9 +24,11 @@
   flex: 1;
   min-width: 200px;
   padding: 0.6rem 0.75rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--input-border, #ddd);
   border-radius: 6px;
   font-size: 0.95rem;
+  background: var(--input-bg);
+  color: var(--text-color);
 }
 
 .subscriptions-add-input:focus {
@@ -58,7 +60,7 @@
 .subscriptions-empty {
   text-align: center;
   padding: 2rem;
-  color: #666;
+  color: var(--muted-text-color);
 }
 
 .subscriptions-list {
@@ -68,9 +70,10 @@
 }
 
 .subscriptions-list-item {
-  background: white;
+  background: var(--surface-color);
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px var(--shadow-color);
+  border: 1px solid var(--border-color);
   margin-bottom: 0.75rem;
   overflow: hidden;
 }
@@ -85,11 +88,11 @@
 }
 
 .subscriptions-list-item-header:hover {
-  background: #f8f9fa;
+  background: var(--hover-bg);
 }
 
 .subscriptions-list-item-chevron {
-  color: #666;
+  color: var(--muted-text-color);
   width: 1.25rem;
   flex-shrink: 0;
 }
@@ -108,7 +111,7 @@
 
 .subscriptions-list-item-meta {
   font-size: 0.85rem;
-  color: #666;
+  color: var(--muted-text-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -133,12 +136,12 @@
   border-radius: 5px;
   cursor: pointer;
   background: transparent;
-  color: #666;
+  color: var(--muted-text-color);
 }
 
 .subscriptions-btn:hover {
-  color: #333;
-  background: #eee;
+  color: var(--text-color);
+  background: var(--hover-bg);
 }
 
 .subscriptions-btn-edit:hover {
@@ -156,6 +159,23 @@
   cursor: not-allowed;
 }
 
+.subscriptions-btn-autoplaylist {
+  font-size: 0.85rem;
+}
+.subscriptions-btn-autoplaylist-label {
+  margin-left: 0.25rem;
+}
+@media (max-width: 520px) {
+  .subscriptions-btn-autoplaylist-label {
+    display: none;
+  }
+}
+
+.subscriptions-auto-playlist-badge {
+  color: #667eea;
+  font-weight: 500;
+}
+
 .subscriptions-edit-form {
   display: flex;
   align-items: center;
@@ -166,9 +186,11 @@
 .subscriptions-edit-input {
   width: 220px;
   padding: 0.4rem 0.5rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--input-border, #ddd);
   border-radius: 5px;
   font-size: 0.9rem;
+  background: var(--input-bg);
+  color: var(--text-color);
 }
 
 .subscriptions-edit-save,
@@ -190,18 +212,18 @@
 }
 
 .subscriptions-edit-cancel {
-  background: #e0e0e0;
-  color: #333;
+  background: var(--hover-bg);
+  color: var(--text-color);
 }
 
 .subscriptions-edit-cancel:hover {
-  background: #d0d0d0;
+  background: var(--border-color);
 }
 
 .subscriptions-videos {
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border-color);
   padding: 1rem 1.25rem;
-  background: #fafafa;
+  background: var(--hover-bg);
 }
 
 .subscriptions-videos-toolbar {
@@ -216,7 +238,7 @@
 .subscriptions-videos-title {
   font-size: 0.95rem;
   font-weight: 500;
-  color: #555;
+  color: var(--muted-text-color);
 }
 
 .subscriptions-videos-title svg {
@@ -246,7 +268,7 @@
 .subscriptions-videos-empty {
   text-align: center;
   padding: 1rem;
-  color: #666;
+  color: var(--muted-text-color);
   font-size: 0.9rem;
 }
 
@@ -261,7 +283,8 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
 }
 
 .subscriptions-video-row:last-child {
@@ -280,12 +303,35 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.9rem;
+  color: var(--text-color);
+}
+
+.subscriptions-video-title-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.subscriptions-video-title-button:hover:not(:disabled) {
+  color: #667eea;
+  text-decoration: underline;
+}
+
+.subscriptions-video-title-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .subscriptions-video-status {
   flex-shrink: 0;
   font-size: 0.8rem;
-  color: #666;
+  color: var(--muted-text-color);
 }
 
 .subscriptions-video-play {
@@ -313,17 +359,20 @@
 }
 
 .subscriptions-modal {
-  background: white;
+  background: var(--surface-color);
   border-radius: 8px;
   padding: 1.5rem;
   max-width: 400px;
   width: 90%;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px var(--shadow-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
 }
 
 .subscriptions-modal h3 {
   margin: 0 0 1rem 0;
   font-size: 1.1rem;
+  color: var(--text-color);
 }
 
 .subscriptions-playlist-picker {
@@ -343,21 +392,22 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
   text-align: left;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  background: white;
+  background: var(--surface-color);
+  color: var(--text-color);
   cursor: pointer;
   font-size: 0.95rem;
 }
 
 .subscriptions-playlist-picker-item:hover {
-  background: #f5f5f5;
-  border-color: #ccc;
+  background: var(--hover-bg);
+  border-color: var(--border-color);
 }
 
 .subscriptions-playlist-picker-item.active {
   border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  background: rgba(102, 126, 234, 0.2);
   color: #667eea;
 }
 
@@ -377,12 +427,12 @@
 }
 
 .subscriptions-modal-cancel {
-  background: #e0e0e0;
-  color: #333;
+  background: var(--hover-bg);
+  color: var(--text-color);
 }
 
 .subscriptions-modal-cancel:hover:not(:disabled) {
-  background: #d0d0d0;
+  background: var(--border-color);
 }
 
 .subscriptions-modal-confirm {

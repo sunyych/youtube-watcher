@@ -51,6 +51,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
   const [reprocessDialogOpen, setReprocessDialogOpen] = useState<number | null>(null)
   const [reprocessLanguage, setReprocessLanguage] = useState<string>('')
   const [addingToPlaylist, setAddingToPlaylist] = useState<number | null>(null)
+  const [restartingTranscribe, setRestartingTranscribe] = useState<number | null>(null)
+  const [restartingSummary, setRestartingSummary] = useState<number | null>(null)
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -307,6 +309,44 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
       alert(err.response?.data?.detail || t('history.item.retryFailed'))
     } finally {
       setRetrying(null)
+    }
+  }
+
+  const handleRestartTranscribe = async (id: number) => {
+    setRestartingTranscribe(id)
+    try {
+      await videoApi.bulkRestartTranscribe([id])
+      const updated = await historyApi.getDetail(id)
+      setExpandedDetail(updated)
+      if (searchQuery.trim()) {
+        await handleSearch(currentPage)
+      } else {
+        await loadHistory()
+      }
+    } catch (err: any) {
+      console.error('Failed to restart transcribe:', err)
+      alert(err.response?.data?.detail || t('history.item.restartTranscribeFailed'))
+    } finally {
+      setRestartingTranscribe(null)
+    }
+  }
+
+  const handleRestartSummary = async (id: number) => {
+    setRestartingSummary(id)
+    try {
+      await videoApi.bulkRestartSummary([id])
+      const updated = await historyApi.getDetail(id)
+      setExpandedDetail(updated)
+      if (searchQuery.trim()) {
+        await handleSearch(currentPage)
+      } else {
+        await loadHistory()
+      }
+    } catch (err: any) {
+      console.error('Failed to restart summary:', err)
+      alert(err.response?.data?.detail || t('history.item.restartSummaryFailed'))
+    } finally {
+      setRestartingSummary(null)
     }
   }
 
@@ -875,6 +915,22 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onLogout }) => {
                       title={t('history.item.play')}
                     >
                       <FontAwesomeIcon icon={faPlay} />
+                    </button>
+                    <button
+                      className="modal-action-button"
+                      onClick={() => handleRestartTranscribe(expandedId)}
+                      disabled={restartingTranscribe === expandedId || restartingSummary === expandedId}
+                      title={restartingTranscribe === expandedId ? t('history.item.restartingTranscribe') : t('history.item.restartTranscribe')}
+                    >
+                      <FontAwesomeIcon icon={faRedo} spin={restartingTranscribe === expandedId} />
+                    </button>
+                    <button
+                      className="modal-action-button"
+                      onClick={() => handleRestartSummary(expandedId)}
+                      disabled={restartingTranscribe === expandedId || restartingSummary === expandedId}
+                      title={restartingSummary === expandedId ? t('history.item.restartingSummary') : t('history.item.restartSummary')}
+                    >
+                      <FontAwesomeIcon icon={faRedo} spin={restartingSummary === expandedId} />
                     </button>
                     <button
                       className="modal-action-button"

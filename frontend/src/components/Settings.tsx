@@ -27,6 +27,9 @@ const Settings: React.FC<SettingsProps> = ({ onLogout }) => {
   const [summaryLanguage, setSummaryLanguage] = useState<string>('中文')
   const [summaryLanguageSaving, setSummaryLanguageSaving] = useState(false)
   const [summaryLanguageSaved, setSummaryLanguageSaved] = useState(false)
+  const [showFeedbackButton, setShowFeedbackButton] = useState(true)
+  const [feedbackButtonSaving, setFeedbackButtonSaving] = useState(false)
+  const [feedbackButtonSaved, setFeedbackButtonSaved] = useState(false)
 
   useEffect(() => {
     const savedTheme = (localStorage.getItem('theme') as Theme | null) ?? 'light'
@@ -38,8 +41,10 @@ const Settings: React.FC<SettingsProps> = ({ onLogout }) => {
   useEffect(() => {
     authApi.getProfile().then((profile) => {
       setSummaryLanguage(profile.summary_language || '中文')
+      setShowFeedbackButton(profile.show_feedback_button ?? true)
     }).catch(() => {
       setSummaryLanguage('中文')
+      setShowFeedbackButton(true)
     })
   }, [])
 
@@ -68,6 +73,22 @@ const Settings: React.FC<SettingsProps> = ({ onLogout }) => {
       setSummaryLanguage(summaryLanguage)
     } finally {
       setSummaryLanguageSaving(false)
+    }
+  }
+
+  const handleFeedbackButtonToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.checked
+    setShowFeedbackButton(next)
+    setFeedbackButtonSaving(true)
+    setFeedbackButtonSaved(false)
+    try {
+      await authApi.updateFeedbackButton(next)
+      setFeedbackButtonSaved(true)
+      setTimeout(() => setFeedbackButtonSaved(false), 2000)
+    } catch {
+      setShowFeedbackButton(!next)
+    } finally {
+      setFeedbackButtonSaving(false)
     }
   }
 
@@ -133,6 +154,28 @@ const Settings: React.FC<SettingsProps> = ({ onLogout }) => {
             <span className="settings-inline-note">{t('settings.summaryLanguage.saving')}</span>
           )}
           {summaryLanguageSaved && (
+            <span className="settings-inline-note settings-saved">{t('settings.summaryLanguage.saved')}</span>
+          )}
+        </div>
+
+        <div className="settings-section">
+          <h2>{t('settings.feedbackButton.title')}</h2>
+          <p className="settings-note">{t('settings.feedbackButton.description')}</p>
+          <label className="theme-toggle">
+            <span className="theme-toggle-label">{t('settings.feedbackButton.label')}</span>
+            <input
+              type="checkbox"
+              checked={showFeedbackButton}
+              onChange={handleFeedbackButtonToggle}
+              disabled={feedbackButtonSaving}
+              aria-label={t('settings.feedbackButton.title')}
+            />
+            <span className="theme-toggle-switch" aria-hidden="true" />
+          </label>
+          {feedbackButtonSaving && (
+            <span className="settings-inline-note">{t('settings.summaryLanguage.saving')}</span>
+          )}
+          {feedbackButtonSaved && (
             <span className="settings-inline-note settings-saved">{t('settings.summaryLanguage.saved')}</span>
           )}
         </div>
