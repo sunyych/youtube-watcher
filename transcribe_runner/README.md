@@ -12,27 +12,27 @@ GPU-accelerated transcription service for the queue worker. Run this on a machin
 
 ### Using Docker Compose (recommended)
 
-From this directory:
+From this directory. The compose file builds **Dockerfile.gpu** (CUDA 12) and uses `WHISPER_DEVICE=cuda` by default:
 
 ```bash
 cp ../.env.example .env   # optional: copy and set WHISPER_MODEL_SIZE, etc.
-docker compose up -d
+docker compose up -d --build
 ```
 
-The service listens on port **8765**. Ensure the queue host can reach this host on that port (firewall, network).
+The service listens on port **8765**. Ensure the queue host can reach this host on that port (firewall, network). Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) on the host.
 
-### Using Docker only
+### Using Docker only (GPU)
 
 ```bash
-docker build -t transcribe_runner .
-docker run --gpus all -p 8765:8765 transcribe_runner
+docker build -f Dockerfile.gpu -t transcribe_runner .
+docker run --gpus all -p 8765:8765 -e WHISPER_DEVICE=cuda transcribe_runner
 ```
 
 ### Environment variables
 
 - `PORT` — Server port (default `8765`).
 - `WHISPER_MODEL_SIZE` — Whisper model (default `medium`).
-- `WHISPER_DEVICE` — `cuda` or `cpu` (default `cuda`).
+- `WHISPER_DEVICE` — `cuda` or `cpu`. Default is **`cuda`** when using Docker Compose / Dockerfile.gpu. Set to `cpu` if you run the GPU image without a GPU (e.g. fallback).
 - `AUDIO_TARGET_SAMPLE_RATE`, `VAD_*` — Same as backend pipeline (optional; defaults match the main app).
 
 ## Connect the queue to the runner

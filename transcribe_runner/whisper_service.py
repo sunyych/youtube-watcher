@@ -35,10 +35,12 @@ class WhisperService:
         device = device or WHISPER_DEVICE
         compute_type = compute_type or _detect_compute_type(device)
         logger.info("Initializing Whisper model: %s on %s with %s", model_size, device, compute_type)
+        self._device = device
         try:
             self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         except Exception as e:
             logger.warning("CUDA init failed (%s), falling back to CPU", e)
+            self._device = "cpu"
             self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
     def transcribe_segments(
@@ -71,15 +73,32 @@ class WhisperService:
 
         for idx, (chunk_audio, meta) in enumerate(zip(audio_chunks, chunk_metadata)):
             offset_sec = float(meta.get("offset", 0))
-            segments_iter, info = self.model.transcribe(
-                chunk_audio,
-                language=language,
-                task=task,
-                beam_size=beam_size,
-                best_of=best_of,
-                temperature=temperature,
-                vad_filter=False,
-            )
+            try:
+                segments_iter, info = self.model.transcribe(
+                    chunk_audio,
+                    language=language,
+                    task=task,
+                    beam_size=beam_size,
+                    best_of=best_of,
+                    temperature=temperature,
+                    vad_filter=False,
+                )
+            except RuntimeError as e:
+                if self._device == "cuda" and ("libcublas" in str(e) or "cannot be loaded" in str(e)):
+                    logger.warning("CUDA failed at runtime (%s), re-initializing with CPU", e)
+                    self._device = "cpu"
+                    self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                    segments_iter, info = self.model.transcribe(
+                        chunk_audio,
+                        language=language,
+                        task=task,
+                        beam_size=beam_size,
+                        best_of=best_of,
+                        temperature=temperature,
+                        vad_filter=False,
+                    )
+                else:
+                    raise
             if idx == 0:
                 detected_language = info.language
                 language_probability = getattr(info, "language_probability", 0.0) or 0.0

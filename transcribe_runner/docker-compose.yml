@@ -1,7 +1,10 @@
 # Run this on the GPU machine. Point queue's TRANSCRIBE_RUNNER_URL to this host:port.
+# Uses Dockerfile.gpu (CUDA 12) so WHISPER_DEVICE=cuda works.
 services:
   transcribe_runner:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
     container_name: transcribe_runner
     ports:
       - "${PORT:-8765}:8765"

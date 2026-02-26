@@ -1,0 +1,26 @@
+# GPU image: CUDA 12 + cuDNN for faster-whisper. Run with: docker run --gpus all ... or compose with deploy.resources.reservations.devices
+FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Use python3 and pip3
+RUN ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY config.py main.py pipeline.py whisper_service.py ./
+
+EXPOSE 8765
+
+ENV PORT=8765
+# Default to CUDA when using this image; override with WHISPER_DEVICE=cpu if needed
+ENV WHISPER_DEVICE=cuda
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8765"]
