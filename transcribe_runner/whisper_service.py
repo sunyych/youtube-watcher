@@ -119,18 +119,42 @@ class WhisperService:
         device = device or WHISPER_DEVICE
         compute_type = compute_type or _detect_compute_type(device)
         device_for_api, device_index = _parse_device(device)
-        logger.info("Initializing Whisper model: %s on %s with %s (device_index=%s)", model_size, device, compute_type, device_index)
+        logger.info(
+            "Initializing Whisper model: %s on %s with %s (device_index=%s)",
+            model_size,
+            device,
+            compute_type,
+            device_index,
+        )
         self._device = device
         try:
             if device_for_api == "cuda":
-                self.model = WhisperModel(model_size, device="cuda", device_index=device_index, compute_type=compute_type)
+                self.model = WhisperModel(
+                    model_size,
+                    device="cuda",
+                    device_index=device_index,
+                    compute_type=compute_type,
+                )
             else:
                 self.model = WhisperModel(model_size, device="cpu", compute_type=compute_type)
         except Exception as e:
+            # 不再自动降级到 CPU，直接记录详细信息并抛出，让调用方看到真实错误
             _log_cuda_diagnostics(e, device)
-            logger.warning("Falling back to CPU (device=%s)", device)
-            self._device = "cpu"
-            self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            logger.error(
+                "Whisper model init failed on device=%s (model_size=%s, compute_type=%s): %s",
+                device,
+                model_size,
+                compute_type,
+                e,
+            )
+            raise
+        # 标记设备健康状态，供上层调度逻辑参考
+        self._unhealthy = False
+
+    @property
+    def is_healthy(self) -> bool:
+        """Return True if this WhisperService is considered healthy."""
+        return not getattr(self, "_unhealthy", False)
 
     def transcribe_segments(
         self,
@@ -175,21 +199,33 @@ class WhisperService:
                     vad_filter=False,
                 )
             except RuntimeError as e:
-                if (self._device == "cuda" or (isinstance(self._device, str) and self._device.startswith("cuda:"))) and ("libcublas" in str(e) or "cannot be loaded" in str(e)):
-                    logger.warning("CUDA failed at runtime (%s), re-initializing with CPU", e)
-                    self._device = "cpu"
-                    self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
-                    segments_iter, info = self.model.transcribe(
-                        chunk_audio,
-                        language=language_for_api,
-                        task=task,
-                        beam_size=beam_size,
-                        best_of=best_of,
-                        temperature=temperature,
-                        vad_filter=False,
+                msg = str(e)
+                is_cuda_device = self._device == "cuda" or (
+                    isinstance(self._device, str) and self._device.startswith("cuda:")
+                )
+                logger.error(
+                    "CUDA runtime error during transcribe (device=%s, is_cuda=%s, model_size=%s, "
+                    "language=%r, chunk_index=%d, offset_sec=%.3f): %s",
+                    self._device,
+                    is_cuda_device,
+                    self.model_size,
+                    language_for_api,
+                    idx,
+                    offset_sec,
+                    msg,
+                )
+                logger.debug("CUDA runtime traceback:\n%s", traceback.format_exc())
+                # 在特定 CUDA 错误上标记设备为不健康，供上层停止向该 GPU 分配新任务
+                if is_cuda_device and "invalid argument" in msg.lower():
+                    logger.warning(
+                        "Marking device %s as unhealthy due to CUDA invalid argument (chunk_index=%d, offset_sec=%.3f)",
+                        self._device,
+                        idx,
+                        offset_sec,
                     )
-                else:
-                    raise
+                    self._unhealthy = True
+                # 不做 CPU 降级，直接抛出，让上层感知 GPU 相关问题
+                raise
             if idx == 0:
                 detected_language = info.language
                 language_probability = getattr(info, "language_probability", 0.0) or 0.0

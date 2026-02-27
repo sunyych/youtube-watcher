@@ -45,3 +45,7 @@ PORT = get_int("PORT", 8765)
 MAX_CONCURRENT_JOBS = max(1, get_int("MAX_CONCURRENT_JOBS", 3))
 # Number of GPUs to use (device ids 0..NUM_GPUS-1). Default same as MAX_CONCURRENT_JOBS.
 NUM_GPUS = max(1, get_int("NUM_GPUS", MAX_CONCURRENT_JOBS))
+
+# Whether to fully release Whisper GPU models when a device becomes idle (no active jobs).
+# This helps on some drivers where VRAM is not reclaimed cleanly across multiple runs.
+WHISPER_RELEASE_GPU_WHEN_IDLE = get_bool("WHISPER_RELEASE_GPU_WHEN_IDLE", True)

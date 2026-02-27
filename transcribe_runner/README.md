@@ -5,7 +5,7 @@ GPU-accelerated transcription service for the queue worker. Run this on a machin
 ## API
 
 - **POST /transcribe** — Upload a WAV file (multipart `file`), optional form field `language`. Returns `202` with `{"job_id": "uuid"}`.
-- **GET /transcribe/{job_id}** — Poll for result. Returns `202` with `{"status": "pending"|"processing", "progress": 0.0~1.0}` until done; then `200` with `{"status": "completed", "text", "language", "segments"}` or `{"status": "failed", "error": "..."}`.
+- **GET /transcribe/{job_id}** — Poll for result. Returns `202` with `{"status": "pending"|"processing", "progress": 0.0~1.0}` until done; then `200` with `{"status": "completed", "text", "language", "segments"}` or `500` with `{"status": "failed", "error": "..."}`.
 - **GET /health** — Returns `200` when the service is up.
 
 ## Run on the GPU machine

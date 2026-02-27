@@ -24,6 +24,8 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              # Expose all available GPUs inside the container so NUM_GPUS/MAX_CONCURRENT_JOBS
+              # can safely be set to the physical GPU count (e.g. 3).
+              count: all
               capabilities: [gpu]
     restart: unless-stopped
