@@ -36,6 +36,7 @@ _device_counter_lock = threading.Lock()
 
 # Bounded pool: at most MAX_CONCURRENT_JOBS run at once (e.g. 3 GPUs)
 _executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
+logger.info("Transcribe runner: max_concurrent_jobs=%s, num_gpus=%s", MAX_CONCURRENT_JOBS, NUM_GPUS)
 
 
 def _get_whisper(device_id: int) -> WhisperService:

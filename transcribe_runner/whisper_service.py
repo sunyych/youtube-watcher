@@ -1,5 +1,8 @@
 """Whisper transcription for transcribe_runner. Standalone, uses config from env."""
 import logging
+import os
+import subprocess
+import traceback
 from typing import Optional, List, Dict, Any
 
 import numpy as np
@@ -16,10 +19,84 @@ except ImportError:
     WhisperModel = None
 
 
+def _log_cuda_diagnostics(exc: BaseException, device: str) -> None:
+    """Log detailed CUDA/GPU info to help debug init failures (e.g. unsupported device cuda:0)."""
+    lines = [
+        "CUDA init failed — diagnostic info:",
+        "  exception: %s" % type(exc).__name__,
+        "  message: %s" % (exc,),
+    ]
+    # Environment
+    cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if cuda_visible is None:
+        lines.append("  CUDA_VISIBLE_DEVICES: (not set)")
+    else:
+        lines.append("  CUDA_VISIBLE_DEVICES=%r" % cuda_visible)
+    lines.append("  requested device: %s" % device)
+    # CTranslate2 GPU count (faster_whisper backend)
+    try:
+        import ctranslate2
+        count = getattr(ctranslate2, "get_cuda_device_count", None)
+        if callable(count):
+            lines.append("  ctranslate2.get_cuda_device_count(): %s" % count())
+        else:
+            lines.append("  ctranslate2.get_cuda_device_count: (not available)")
+    except Exception as e:
+        lines.append("  ctranslate2 check: %s" % e)
+    # nvidia-smi if available (driver + GPU list)
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,driver_version,memory.total", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            lines.append("  nvidia-smi (this process):")
+            for line in out.stdout.strip().splitlines():
+                lines.append("    %s" % line.strip())
+        elif out.returncode != 0:
+            lines.append("  nvidia-smi: exit code %s, stderr=%r" % (out.returncode, (out.stderr or "").strip()[:200]))
+        else:
+            lines.append("  nvidia-smi: no GPUs listed")
+    except FileNotFoundError:
+        lines.append("  nvidia-smi: not found (container may not have GPU access or nvidia CLI)")
+    except Exception as e:
+        lines.append("  nvidia-smi: %s" % e)
+    # Docker hint
+    if os.path.exists("/.dockerenv"):
+        lines.append("  running inside Docker — ensure run with --gpus all or deploy.resources.reservations.devices (nvidia)")
+    # Full traceback at DEBUG
+    logger.warning("\n".join(lines))
+    logger.debug("CUDA init traceback:\n%s", traceback.format_exc())
+
+
 def _detect_compute_type(device: str) -> str:
     if device == "cuda" or (isinstance(device, str) and device.startswith("cuda:")):
         return "float16"
     return "int8"
+
+
+def _parse_device(device: str) -> tuple[str, Optional[int]]:
+    """Convert device string to (device, device_index). WhisperModel expects device in {'cuda','cpu'} and optional device_index for CUDA."""
+    if not device or device == "cpu":
+        return ("cpu", None)
+    if device == "cuda":
+        return ("cuda", 0)
+    if isinstance(device, str) and device.startswith("cuda:"):
+        try:
+            idx = int(device.split(":", 1)[1])
+            return ("cuda", idx)
+        except ValueError:
+            return ("cuda", 0)
+    return ("cpu", None)
+
+
+def _normalize_language(lang: Optional[str]) -> Optional[str]:
+    """Faster-whisper 只接受合法语言码，不接受 'unknown'。未指定或 unknown 时传 None 自动检测，默认支持中英文等."""
+    if lang is None or (isinstance(lang, str) and lang.strip().lower() in ("", "unknown")):
+        return None
+    return lang.strip() if isinstance(lang, str) else lang
 
 
 def _device_string(device_id: Optional[int] = None) -> str:
@@ -41,12 +118,17 @@ class WhisperService:
         self.model_size = model_size
         device = device or WHISPER_DEVICE
         compute_type = compute_type or _detect_compute_type(device)
-        logger.info("Initializing Whisper model: %s on %s with %s", model_size, device, compute_type)
+        device_for_api, device_index = _parse_device(device)
+        logger.info("Initializing Whisper model: %s on %s with %s (device_index=%s)", model_size, device, compute_type, device_index)
         self._device = device
         try:
-            self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+            if device_for_api == "cuda":
+                self.model = WhisperModel(model_size, device="cuda", device_index=device_index, compute_type=compute_type)
+            else:
+                self.model = WhisperModel(model_size, device="cpu", compute_type=compute_type)
         except Exception as e:
-            logger.warning("CUDA init failed (%s), falling back to CPU", e)
+            _log_cuda_diagnostics(e, device)
+            logger.warning("Falling back to CPU (device=%s)", device)
             self._device = "cpu"
             self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
@@ -73,6 +155,8 @@ class WhisperService:
         if len(audio_chunks) != len(chunk_metadata):
             raise ValueError("audio_chunks and chunk_metadata must have same length")
 
+        # faster_whisper 不接受 "unknown"，未指定或 unknown 时按英文处理
+        language_for_api = _normalize_language(language)
         full_text_parts = []
         all_segments = []
         detected_language = language
@@ -83,7 +167,7 @@ class WhisperService:
             try:
                 segments_iter, info = self.model.transcribe(
                     chunk_audio,
-                    language=language,
+                    language=language_for_api,
                     task=task,
                     beam_size=beam_size,
                     best_of=best_of,
@@ -91,13 +175,13 @@ class WhisperService:
                     vad_filter=False,
                 )
             except RuntimeError as e:
-                if self._device == "cuda" and ("libcublas" in str(e) or "cannot be loaded" in str(e)):
+                if (self._device == "cuda" or (isinstance(self._device, str) and self._device.startswith("cuda:"))) and ("libcublas" in str(e) or "cannot be loaded" in str(e)):
                     logger.warning("CUDA failed at runtime (%s), re-initializing with CPU", e)
                     self._device = "cpu"
                     self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
                     segments_iter, info = self.model.transcribe(
                         chunk_audio,
-                        language=language,
+                        language=language_for_api,
                         task=task,
                         beam_size=beam_size,
                         best_of=best_of,
