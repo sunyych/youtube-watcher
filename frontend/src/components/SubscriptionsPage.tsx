@@ -37,6 +37,8 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [videos, setVideos] = useState<HistoryItem[]>([])
   const [videosLoading, setVideosLoading] = useState(false)
+  const [videosSkip, setVideosSkip] = useState(0)
+  const VIDEOS_PAGE_SIZE = 100
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<number>>(new Set())
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editUrl, setEditUrl] = useState('')
@@ -90,10 +92,11 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
     if (expandedId === null) return
     setVideosLoading(true)
     subscriptionsApi
-      .getVideos(expandedId)
+      .getVideos(expandedId, 0, VIDEOS_PAGE_SIZE)
       .then((data) => {
         setVideos(data)
         setSelectedVideoIds(new Set())
+        setVideosSkip(data.length)
       })
       .catch((err) => {
         console.error('Failed to load subscription videos:', err)
@@ -108,6 +111,7 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
     } else {
       setVideos([])
       setSelectedVideoIds(new Set())
+      setVideosSkip(0)
     }
   }, [expandedId, loadVideosForExpanded])
 
@@ -184,6 +188,33 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
     })
   }
 
+  const handleToggleSelectAll = () => {
+    setSelectedVideoIds((prev) => {
+      if (videos.length === 0) return new Set()
+      if (prev.size === videos.length) {
+        return new Set()
+      }
+      return new Set(videos.map((v) => v.id))
+    })
+  }
+
+  const handleLoadMoreVideos = async () => {
+    if (expandedId === null) return
+    setVideosLoading(true)
+    try {
+      const more = await subscriptionsApi.getVideos(expandedId, videosSkip, VIDEOS_PAGE_SIZE)
+      if (more.length > 0) {
+        setVideos((prev) => [...prev, ...more])
+        setVideosSkip((prev) => prev + more.length)
+      }
+    } catch (err) {
+      console.error('Failed to load more subscription videos:', err)
+      alert(t('subscriptions.videosLoadFailed'))
+    } finally {
+      setVideosLoading(false)
+    }
+  }
+
   const openPlaylistModal = () => {
     if (selectedVideoIds.size === 0) {
       alert(t('subscriptions.noVideosSelected'))
@@ -250,6 +281,9 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
       return s
     }
   }
+
+  const allVideosSelected =
+    videos.length > 0 && selectedVideoIds.size === videos.length
 
   return (
     <div className="subscriptions-page page-with-header">
@@ -367,6 +401,14 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
                       <div className="subscriptions-videos-actions">
                         <button
                           type="button"
+                          className="subscriptions-select-all-btn"
+                          onClick={handleToggleSelectAll}
+                          disabled={videos.length === 0}
+                        >
+                          {allVideosSelected ? t('playlist.deselectAll') : t('playlist.selectAll')}
+                        </button>
+                        <button
+                          type="button"
                           className="subscriptions-add-to-playlist-btn"
                           onClick={openPlaylistModal}
                           disabled={selectedVideoIds.size === 0}
@@ -380,38 +422,52 @@ const SubscriptionsPage: React.FC<SubscriptionsPageProps> = ({ onLogout }) => {
                     ) : videos.length === 0 ? (
                       <div className="subscriptions-videos-empty">{t('subscriptions.noVideos')}</div>
                     ) : (
-                      <ul className="subscriptions-videos-list">
-                        {videos.map((v) => (
-                          <li key={v.id} className="subscriptions-video-row">
-                            <label className="subscriptions-video-checkbox" title={t('playlist.selectItem')}>
-                              <input
-                                type="checkbox"
-                                aria-label={t('playlist.selectItem')}
-                                checked={selectedVideoIds.has(v.id)}
-                                onChange={() => toggleVideoSelection(v.id)}
-                              />
-                            </label>
+                      <>
+                        <ul className="subscriptions-videos-list">
+                          {videos.map((v) => (
+                            <li key={v.id} className="subscriptions-video-row">
+                              <label className="subscriptions-video-checkbox" title={t('playlist.selectItem')}>
+                                <input
+                                  type="checkbox"
+                                  aria-label={t('playlist.selectItem')}
+                                  checked={selectedVideoIds.has(v.id)}
+                                  onChange={() => toggleVideoSelection(v.id)}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="subscriptions-video-title subscriptions-video-title-button"
+                                title={v.title || undefined}
+                                onClick={(e) => { e.stopPropagation(); openVideoDetail(v.id) }}
+                                disabled={detailLoading}
+                              >
+                                {v.title || v.url}
+                              </button>
+                              <span className="subscriptions-video-status">{v.status}</span>
+                              <button
+                                type="button"
+                                className="subscriptions-video-play"
+                                onClick={() => navigate(`/player/${v.id}`)}
+                                title={t('history.item.play')}
+                              >
+                                <FontAwesomeIcon icon={faPlay} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        {videos.length >= VIDEOS_PAGE_SIZE && (
+                          <div className="subscriptions-videos-load-more">
                             <button
                               type="button"
-                              className="subscriptions-video-title subscriptions-video-title-button"
-                              title={v.title || undefined}
-                              onClick={(e) => { e.stopPropagation(); openVideoDetail(v.id) }}
-                              disabled={detailLoading}
+                              className="subscriptions-videos-load-more-btn"
+                              onClick={handleLoadMoreVideos}
+                              disabled={videosLoading}
                             >
-                              {v.title || v.url}
+                              {videosLoading ? t('app.loading') : t('subscriptions.loadMoreChannel')}
                             </button>
-                            <span className="subscriptions-video-status">{v.status}</span>
-                            <button
-                              type="button"
-                              className="subscriptions-video-play"
-                              onClick={() => navigate(`/player/${v.id}`)}
-                              title={t('history.item.play')}
-                            >
-                              <FontAwesomeIcon icon={faPlay} />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

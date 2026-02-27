@@ -179,7 +179,8 @@
     "autoPlaylistTitle": "Auto-add this channel's new videos to a playlist",
     "autoPlaylistNone": "Don't auto-add",
     "autoPlaylistSet": "New videos → {{name}}",
-    "autoPlaylistUpdated": "Updated"
+    "autoPlaylistUpdated": "Updated",
+    "loadMoreChannel": "Load more videos from this channel"
   },
   "playlist": {
     "title": "Playlist",

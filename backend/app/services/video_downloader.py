@@ -171,12 +171,8 @@ class VideoDownloader:
             'outtmpl': str(self.storage_dir / '%(id)s.%(ext)s'),
             'quiet': False,
             'no_warnings': False,
-            # Download subtitles when available (manual + auto-generated) to skip transcription
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitleslangs': ['en', 'zh', 'zh-Hans', 'zh-Hant', 'ja', 'ko'],
-            'subtitlesformat': 'srt/best',
-            # YouTube increasingly requires executing external JS to solve challenges.
+            # Only download the video/audio; do not attempt subtitles in the queue path.
+            # This keeps the flow simpler and avoids extra subtitle HTTP requests.
             'javascript_runtime': os.getenv("YTDLP_JAVASCRIPT_RUNTIME", "deno"),
             # Add options to bypass YouTube restrictions
             'extractor_args': {
@@ -245,33 +241,19 @@ class VideoDownloader:
         # Extra retry wrapper (covers extractor failures that yt-dlp internal retries may not).
         # Default to 1 attempt: do not auto retry failed downloads.
         max_attempts = max(1, int(os.getenv("YTDLP_DOWNLOAD_MAX_ATTEMPTS", "1")))
-        # When subtitles are requested, allow at least 2 attempts so subtitle-only failure (e.g. 429)
-        # can retry without subtitles and still succeed with the video.
-        if ydl_opts.get('writesubtitles') or ydl_opts.get('writeautomaticsub'):
-            max_attempts = max(max_attempts, 2)
         base_backoff = float(os.getenv("YTDLP_DOWNLOAD_RETRY_BACKOFF_SECONDS", "2.0"))
 
         last_err: Optional[Exception] = None
-        retry_without_subs = False
         for attempt in range(1, max_attempts + 1):
             try:
                 # Use a deep copy so nested dicts (e.g. extractor_args) don't retain state on retry
                 opts = copy.deepcopy(ydl_opts)
                 if attempt > 1:
-                    if retry_without_subs:
-                        # Disable all subtitle download so we only get the video (avoid 429 on subtitle URL)
-                        opts['writesubtitles'] = False
-                        opts['writeautomaticsub'] = False
-                        opts['writeautosubs'] = False  # alternate key used by some yt-dlp versions
-                        opts['subtitleslangs'] = []
-                        opts.pop('subtitlesformat', None)
-                        logger.warning("Retrying download without subtitles (subtitle request failed, e.g. 429)")
                     opts['format'] = fallback_format
                     opts['merge_output_format'] = 'mkv'
 
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=True)
-                retry_without_subs = False  # success, clear for any future use
 
                 # Find the downloaded file
                 video_id = info.get('id', '')
@@ -282,23 +264,6 @@ class VideoDownloader:
                     # Try to find any file with the video ID
                     for file in self.storage_dir.glob(f"{video_id}.*"):
                         video_file = file
-                        break
-
-                # Find and parse subtitle file if present (skip transcription later)
-                subtitle_path: Optional[Path] = None
-                subtitle_text = ""
-                for pattern in (f"{video_id}.*.srt", f"{video_id}.*.vtt", f"{video_id}.srt", f"{video_id}.vtt"):
-                    for sub_file in sorted(self.storage_dir.glob(pattern)):
-                        # e.g. id.en.srt, id.zh-Hans.srt (yt-dlp: id.lang.ext)
-                        if not sub_file.name.startswith(video_id + "."):
-                            continue
-                        candidate = parse_subtitle_to_text(sub_file)
-                        if candidate and len(candidate) > 20:
-                            subtitle_path = sub_file
-                            subtitle_text = candidate
-                            logger.info(f"Using downloaded subtitle for {video_id}: {sub_file.name}")
-                            break
-                    if subtitle_text:
                         break
 
                 # Extract upload date
@@ -338,9 +303,6 @@ class VideoDownloader:
                     'view_count': info.get('view_count') or 0,
                     'like_count': info.get('like_count') or 0,
                 }
-                if subtitle_text:
-                    result['subtitle_text'] = subtitle_text
-                    result['subtitle_path'] = str(subtitle_path) if subtitle_path else None
                 return result
             except Exception as e:
                 last_err = e
@@ -358,32 +320,6 @@ class VideoDownloader:
                     )
                     if max_attempts >= 2:
                         continue
-
-                # If only subtitle download failed (e.g. 429), retry once without subtitles so we still get the video.
-                if attempt == 1 and _looks_like_subtitle_only_error(msg):
-                    logger.warning(
-                        f"Subtitle download failed for {url} (e.g. 429). "
-                        "Retrying without subtitles to still get the video."
-                    )
-                    # Video may have been downloaded before subtitle failed; remove it so retry does a full
-                    # download with no subtitles (otherwise yt-dlp may only try to fetch subtitles again).
-                    try:
-                        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                            partial = ydl.extract_info(url, download=False)
-                        vid = partial and partial.get('id')
-                        if vid:
-                            for f in self.storage_dir.glob(f"{vid}.*"):
-                                try:
-                                    f.unlink()
-                                    logger.info("Removed partial file for retry: %s", f.name)
-                                except OSError:
-                                    pass
-                    except Exception as cleanup_err:
-                        logger.debug("Could not clean partial files for retry: %s", cleanup_err)
-                    retry_without_subs = True
-                    if max_attempts < 2:
-                        max_attempts = 2  # allow one more iteration for subtitle fallback
-                    continue
 
                 retryable = _looks_retryable(msg)
                 if attempt < max_attempts and retryable:

@@ -235,6 +235,12 @@
   margin-bottom: 0.75rem;
 }
 
+.subscriptions-videos-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .subscriptions-videos-title {
   font-size: 0.95rem;
   font-weight: 500;
@@ -243,6 +249,25 @@
 
 .subscriptions-videos-title svg {
   margin-right: 0.35rem;
+}
+
+.subscriptions-select-all-btn {
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.subscriptions-select-all-btn:hover:not(:disabled) {
+  background: var(--surface-color);
+}
+
+.subscriptions-select-all-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .subscriptions-add-to-playlist-btn {
@@ -270,6 +295,31 @@
   padding: 1rem;
   color: var(--muted-text-color);
   font-size: 0.9rem;
+}
+
+.subscriptions-videos-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.subscriptions-videos-load-more-btn {
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-color);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.subscriptions-videos-load-more-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.subscriptions-videos-load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .subscriptions-videos-list {
