@@ -13,6 +13,11 @@ build-backend:
 	docker compose build backend queue postgres
 	docker compose up -d backend queue postgres
 
+build-queue:
+	docker compose stop queue
+	docker compose build queue
+	docker compose up -d queue
+
 # --- Maintenance: run with docker (ensure postgres + backend image available) ---
 # Refresh titles for records that have no title (yt-dlp metadata only; member-only -> marked unavailable).
 refresh-titles:

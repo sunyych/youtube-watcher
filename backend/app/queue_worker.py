@@ -235,6 +235,30 @@ def get_whisper_service():
         return None
 
 
+def _extract_transcript_from_runner_response(data: dict) -> Dict[str, Any]:
+    """
+    Parse runner GET /transcribe/{job_id} completed response into {text, language, segments}.
+    Handles both top-level and nested result (e.g. result.text).
+    """
+    if not isinstance(data, dict):
+        return {"text": "", "language": "unknown", "segments": []}
+    # Runner returns top-level "text", "language", "segments" when status=completed
+    text = data.get("text")
+    if text is None and "result" in data:
+        result = data.get("result") or {}
+        text = result.get("text")
+    text = (text or "").strip() if isinstance(text, str) else ""
+    language = data.get("language") or (data.get("result") or {}).get("language") or "unknown"
+    if not isinstance(language, str):
+        language = "unknown"
+    segments = data.get("segments")
+    if segments is None and "result" in data:
+        segments = (data.get("result") or {}).get("segments")
+    if not isinstance(segments, list):
+        segments = []
+    return {"text": text, "language": language, "segments": segments}
+
+
 async def _update_runner_record_progress(record_id: int, progress_pct: float) -> None:
     """Update record progress by id (used by runner worker with its own session)."""
     db = SessionLocal()
@@ -292,11 +316,9 @@ async def _transcribe_via_runner_impl(
                 continue
             status = data.get("status")
             if status == "completed":
-                return {
-                    "text": data.get("text", ""),
-                    "language": data.get("language", "unknown"),
-                    "segments": data.get("segments", []),
-                }
+                out = _extract_transcript_from_runner_response(data)
+                logger.info(f"Record {record_id}: runner completed, text length={len(out.get('text') or '')}")
+                return out
             if status == "failed":
                 logger.error(f"Record {record_id}: runner job failed: {data.get('error', 'unknown')}")
                 return None
@@ -395,11 +417,7 @@ async def _transcribe_via_runner(
                 continue
             status = data.get("status")
             if status == "completed":
-                return {
-                    "text": data.get("text", ""),
-                    "language": data.get("language", "unknown"),
-                    "segments": data.get("segments", []),
-                }
+                return _extract_transcript_from_runner_response(data)
             if status == "failed":
                 logger.error(f"Record {record_id}: runner job failed: {data.get('error', 'unknown')}")
                 return None
@@ -955,8 +973,11 @@ async def process_video_task(record_id: int):
                     record.progress = 90.0
                     db.commit()
                 else:
-                    transcript_text = transcript_result.get("text") or ""
-                    record.language = transcript_result.get("language", record.language)
+                    # Extract transcript from runner response (text must be plain string, not JSON)
+                    transcript_text = (transcript_result.get("text") or "").strip()
+                    if not isinstance(transcript_text, str):
+                        transcript_text = str(transcript_text) if transcript_text else ""
+                    record.language = transcript_result.get("language") or record.language or "unknown"
                     record.progress = 90.0
                     db.commit()
                     try:
@@ -976,6 +997,16 @@ async def process_video_task(record_id: int):
                     with open(transcript_file_path, "w", encoding="utf-8") as f:
                         f.write(record.transcript)
                     record.transcript_file_path = str(transcript_file_path)
+                    # Optionally save segments (timed transcript) as JSON for subtitles
+                    segments = transcript_result.get("segments")
+                    if isinstance(segments, list) and segments:
+                        import json
+                        segments_path = Path(settings.video_storage_dir) / f"{video_id}_segments.json"
+                        try:
+                            with open(segments_path, "w", encoding="utf-8") as sf:
+                                json.dump({"language": record.language, "segments": segments}, sf, ensure_ascii=False, indent=0)
+                        except Exception as e:
+                            logger.debug(f"Could not save segments JSON for record {record_id}: {e}")
                     record.progress = 95.0
                     db.commit()
             else:
