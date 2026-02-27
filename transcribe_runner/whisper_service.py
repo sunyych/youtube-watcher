@@ -92,6 +92,13 @@ def _parse_device(device: str) -> tuple[str, Optional[int]]:
     return ("cpu", None)
 
 
+def _normalize_language(lang: Optional[str]) -> Optional[str]:
+    """Faster-whisper 只接受合法语言码，不接受 'unknown'。未指定或 unknown 时传 None 自动检测，默认支持中英文等."""
+    if lang is None or (isinstance(lang, str) and lang.strip().lower() in ("", "unknown")):
+        return None
+    return lang.strip() if isinstance(lang, str) else lang
+
+
 def _device_string(device_id: Optional[int] = None) -> str:
     """Return device string: cuda:0, cuda:1, ... or WHISPER_DEVICE if device_id is None."""
     if device_id is not None:
@@ -148,6 +155,8 @@ class WhisperService:
         if len(audio_chunks) != len(chunk_metadata):
             raise ValueError("audio_chunks and chunk_metadata must have same length")
 
+        # faster_whisper 不接受 "unknown"，未指定或 unknown 时按英文处理
+        language_for_api = _normalize_language(language)
         full_text_parts = []
         all_segments = []
         detected_language = language
@@ -158,7 +167,7 @@ class WhisperService:
             try:
                 segments_iter, info = self.model.transcribe(
                     chunk_audio,
-                    language=language,
+                    language=language_for_api,
                     task=task,
                     beam_size=beam_size,
                     best_of=best_of,
@@ -172,7 +181,7 @@ class WhisperService:
                     self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
                     segments_iter, info = self.model.transcribe(
                         chunk_audio,
-                        language=language,
+                        language=language_for_api,
                         task=task,
                         beam_size=beam_size,
                         best_of=best_of,

@@ -50,4 +50,6 @@ TRANSCRIBE_RUNNER_POLL_INTERVAL_SECONDS=30
 TRANSCRIBE_RUNNER_CONCURRENCY=3
 ```
 
+**Three GPUs, three concurrent tasks:** To run three transcription tasks at once (one per GPU), set queue-side `TRANSCRIBE_RUNNER_CONCURRENCY=3` and on the runner use defaults `MAX_CONCURRENT_JOBS=3` and `NUM_GPUS=3`. The queue sends up to three jobs to the runner; the runner runs them in parallel on `cuda:0`, `cuda:1`, and `cuda:2`.
+
 Then restart the queue service (e.g. `docker compose up -d queue`). If `TRANSCRIBE_RUNNER_URL` is empty, the queue uses local Whisper (slower, no GPU required).

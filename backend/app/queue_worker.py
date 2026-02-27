@@ -1481,7 +1481,7 @@ async def main():
         for _ in range(n):
             asyncio.create_task(_runner_worker())
         _runner_worker_started = True
-        logger.info("Transcribe runner queue enabled: %d concurrent jobs (next sent as soon as slot free)", n)
+        logger.info("Transcribe runner queue enabled: %d concurrent jobs (one per GPU slot)", n)
 
     logger.info("Starting queue worker loop...")
     await worker_loop()
