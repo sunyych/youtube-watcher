@@ -148,13 +148,6 @@ class WhisperService:
                 e,
             )
             raise
-        # 标记设备健康状态，供上层调度逻辑参考
-        self._unhealthy = False
-
-    @property
-    def is_healthy(self) -> bool:
-        """Return True if this WhisperService is considered healthy."""
-        return not getattr(self, "_unhealthy", False)
 
     def transcribe_segments(
         self,
@@ -215,15 +208,6 @@ class WhisperService:
                     msg,
                 )
                 logger.debug("CUDA runtime traceback:\n%s", traceback.format_exc())
-                # 在特定 CUDA 错误上标记设备为不健康，供上层停止向该 GPU 分配新任务
-                if is_cuda_device and "invalid argument" in msg.lower():
-                    logger.warning(
-                        "Marking device %s as unhealthy due to CUDA invalid argument (chunk_index=%d, offset_sec=%.3f)",
-                        self._device,
-                        idx,
-                        offset_sec,
-                    )
-                    self._unhealthy = True
                 # 不做 CPU 降级，直接抛出，让上层感知 GPU 相关问题
                 raise
             if idx == 0:

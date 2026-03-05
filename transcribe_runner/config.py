@@ -49,3 +49,10 @@ NUM_GPUS = max(1, get_int("NUM_GPUS", MAX_CONCURRENT_JOBS))
 # Whether to fully release Whisper GPU models when a device becomes idle (no active jobs).
 # This helps on some drivers where VRAM is not reclaimed cleanly across multiple runs.
 WHISPER_RELEASE_GPU_WHEN_IDLE = get_bool("WHISPER_RELEASE_GPU_WHEN_IDLE", True)
+
+# Max number of times a job is retried when scheduling fails on a GPU (e.g. CUDA invalid argument).
+# 0 disables retries; default is 2.
+JOB_MAX_RETRIES = max(0, get_int("JOB_MAX_RETRIES", 2))
+
+# Cooldown seconds between two jobs on the same GPU device.
+GPU_COOLDOWN_SECONDS = max(0, get_int("GPU_COOLDOWN_SECONDS", 30))

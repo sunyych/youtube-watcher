@@ -53,3 +53,30 @@ TRANSCRIBE_RUNNER_CONCURRENCY=3
 **Three GPUs, three concurrent tasks:** To run three transcription tasks at once (one per GPU), set queue-side `TRANSCRIBE_RUNNER_CONCURRENCY=3` and on the runner use defaults `MAX_CONCURRENT_JOBS=3` and `NUM_GPUS=3`. The queue sends up to three jobs to the runner; the runner runs them in parallel on `cuda:0`, `cuda:1`, and `cuda:2`.
 
 Then restart the queue service (e.g. `docker compose up -d queue`). If `TRANSCRIBE_RUNNER_URL` is empty, the queue uses local Whisper (slower, no GPU required).
+
+## Optional: restart container when all GPUs are idle
+
+If the runner can get into a state where all GPUs are stuck at low utilization (e.g. after CUDA errors), you can run a script on the **GPU host** that checks GPU utilization and restarts the container when all GPUs are below a threshold (e.g. 30%) for two consecutive checks.
+
+### Windows (every 60 seconds)
+
+Double‑click or run in cmd:
+
+```cmd
+scripts\restart_if_gpus_idle.bat
+```
+
+The script loops every 60 seconds: if **all** GPUs are below 30% for two checks in a row (60 s apart), it runs `docker restart transcribe_runner`. Edit the first lines in the `.bat` to change `CONTAINER_NAME`, `THRESHOLD` (30), or `INTERVAL` (60). Requires `nvidia-smi` (NVIDIA drivers) and `docker` on PATH.
+
+### Linux
+
+```bash
+chmod +x scripts/restart_if_gpus_idle.sh
+./scripts/restart_if_gpus_idle.sh transcribe_runner 30 60
+```
+
+**Cron** (e.g. every 3 minutes): `crontab -e`:
+
+```cron
+*/3 * * * * /path/to/youtube-watcher/transcribe_runner/scripts/restart_if_gpus_idle.sh transcribe_runner 30 60
+```

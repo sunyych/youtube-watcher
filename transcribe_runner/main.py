@@ -7,6 +7,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -21,6 +22,8 @@ from config import (
     MAX_CONCURRENT_JOBS,
     NUM_GPUS,
     WHISPER_RELEASE_GPU_WHEN_IDLE,
+    JOB_MAX_RETRIES,
+    GPU_COOLDOWN_SECONDS,
 )
 from pipeline import run_pipeline
 from whisper_service import WhisperService
@@ -41,6 +44,8 @@ _whisper_lock = threading.Lock()
 _disabled_devices: set[int] = set()
 # Active job count per device_id, used to know when a GPU becomes idle so we can optionally release its model.
 _active_jobs_per_device: dict[int, int] = {}
+# Next allowed time (unix timestamp) when a GPU device is allowed to accept a new job.
+_device_next_allowed_at: dict[int, float] = {}
 # Round-robin device assignment for incoming jobs (skips disabled devices)
 _device_counter = 0
 _device_counter_lock = threading.Lock()
@@ -51,8 +56,8 @@ logger.info("Transcribe runner: max_concurrent_jobs=%s, num_gpus=%s", MAX_CONCUR
 
 # In-memory job queue: acceptor enqueues, dispatcher thread assigns jobs to GPUs.
 _job_queue: Queue = Queue()
-_dispatcher_thread = threading.Thread(target=lambda: _dispatcher_loop(), daemon=True)
-_dispatcher_thread.start()
+# Dispatcher thread will be started on FastAPI startup event.
+_dispatcher_thread: threading.Thread | None = None
 
 
 def _get_whisper(device_id: int) -> WhisperService:
@@ -62,16 +67,23 @@ def _get_whisper(device_id: int) -> WhisperService:
             raise RuntimeError(f"GPU device {device_id} is disabled due to previous CUDA errors")
         if device_id not in _whisper_services:
             device_str = f"cuda:{device_id}" if device_id < NUM_GPUS else "cuda:0"
-            _whisper_services[device_id] = WhisperService(
-                model_size=WHISPER_MODEL_SIZE,
-                device=device_str,
-            )
+            try:
+                _whisper_services[device_id] = WhisperService(
+                    model_size=WHISPER_MODEL_SIZE,
+                    device=device_str,
+                )
+            except Exception as e:
+                # If model initialization fails on this GPU (e.g. CUDA invalid argument),
+                # mark the device as disabled so future jobs won't be scheduled to it.
+                logger.error(
+                    "Failed to initialize WhisperService on device_id=%s (%s): %s",
+                    device_id,
+                    device_str,
+                    e,
+                )
+                _disabled_devices.add(device_id)
+                raise
         svc = _whisper_services[device_id]
-        # If underlying service has marked itself unhealthy, disable this device and fail fast
-        if hasattr(svc, "is_healthy") and not svc.is_healthy:
-            logger.warning("WhisperService for device_id=%s is unhealthy, disabling this GPU", device_id)
-            _disabled_devices.add(device_id)
-            raise RuntimeError(f"GPU device {device_id} is disabled (unhealthy WhisperService)")
         return svc
 
 
@@ -131,13 +143,37 @@ def _release_device_after_job(device_id: int) -> None:
         _release_whisper_if_idle(device_id)
 
 
+def _wait_for_device_cooldown(device_id: int) -> None:
+    """
+    Ensure there is at least GPU_COOLDOWN_SECONDS between two jobs on the same device.
+    This is a simple blocking cooldown executed in the dispatcher thread.
+    """
+    if GPU_COOLDOWN_SECONDS <= 0:
+        return
+    now = time.time()
+    with _device_counter_lock:
+        allowed_at = _device_next_allowed_at.get(device_id, 0.0)
+    if allowed_at > now:
+        sleep_for = allowed_at - now
+        logger.info(
+            "Cooling down device %s for %.1f seconds before accepting next job",
+            device_id,
+            sleep_for,
+        )
+        time.sleep(sleep_for)
+    # After cooldown, set the next allowed time for this device.
+    with _device_counter_lock:
+        _device_next_allowed_at[device_id] = time.time() + GPU_COOLDOWN_SECONDS
+
+
 def _dispatcher_loop() -> None:
     """
     Background dispatcher: pulls jobs from the in-memory queue and schedules
     them onto available GPUs via the worker thread pool.
     """
+    logger.info("Dispatcher loop started")
     while True:
-        job_id, audio_path, language = _job_queue.get()
+        job_id, audio_path, language, attempt = _job_queue.get()
         try:
             device_id = _pick_device_id()
         except RuntimeError as e:
@@ -151,11 +187,49 @@ def _dispatcher_loop() -> None:
             except OSError:
                 pass
             continue
-        _executor.submit(_run_job, job_id, audio_path, language, device_id)
+
+        # Enforce per-GPU cooldown between jobs.
+        _wait_for_device_cooldown(device_id)
+
+        # Ensure the selected GPU can initialize the model; if it fails (e.g. CUDA invalid argument),
+        # optionally retry this job on another GPU up to JOB_MAX_RETRIES times.
+        try:
+            _get_whisper(device_id)
+        except Exception as e:
+            logger.error(
+                "Failed to initialize model on device_id=%s for job %s (attempt %d): %s",
+                device_id,
+                job_id,
+                attempt,
+                e,
+            )
+            if attempt < JOB_MAX_RETRIES:
+                logger.info(
+                    "Re-queuing job %s after init failure on device %s (attempt %d/%d)",
+                    job_id,
+                    device_id,
+                    attempt + 1,
+                    JOB_MAX_RETRIES,
+                )
+                _job_queue.put((job_id, audio_path, language, attempt + 1))
+                continue
+            # Exhausted retries; mark job failed and cleanup.
+            with _jobs_lock:
+                if job_id in jobs:
+                    jobs[job_id]["status"] = "failed"
+                    jobs[job_id]["error"] = str(e)
+            try:
+                os.unlink(audio_path)
+            except OSError:
+                pass
+            continue
+
+        _executor.submit(_run_job, job_id, audio_path, language, device_id, attempt)
 
 
-def _run_job(job_id: str, audio_path: str, language: str | None, device_id: int):
+def _run_job(job_id: str, audio_path: str, language: str | None, device_id: int, attempt: int):
     device_released = False
+    delete_audio = True
     try:
         # Track active jobs per device so we can know when a GPU becomes idle.
         with _device_counter_lock:
@@ -207,23 +281,54 @@ def _run_job(job_id: str, audio_path: str, language: str | None, device_id: int)
                 "segments": result.get("segments", []),
             }
     except Exception as e:
-        logger.exception("Job %s failed: %s", job_id, e)
-        with _jobs_lock:
-            jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"] = str(e)
+        msg = str(e)
+        # CUDA invalid argument during transcribe: mark job for retry on another GPU if possible.
+        if "invalid argument" in msg.lower() and attempt < JOB_MAX_RETRIES:
+            logger.error(
+                "Job %s hit CUDA invalid argument on device %s during transcribe (attempt %d/%d), re-queuing",
+                job_id,
+                device_id,
+                attempt + 1,
+                JOB_MAX_RETRIES,
+            )
+            with _jobs_lock:
+                if job_id in jobs:
+                    jobs[job_id]["status"] = "pending"
+                    jobs[job_id]["progress"] = 0.0
+                    jobs[job_id]["error"] = msg
+            # Requeue for another attempt; audio file must be kept.
+            delete_audio = False
+            _job_queue.put((job_id, audio_path, language, attempt + 1))
+        else:
+            logger.exception("Job %s failed: %s", job_id, e)
+            with _jobs_lock:
+                if job_id in jobs:
+                    jobs[job_id]["status"] = "failed"
+                    jobs[job_id]["error"] = msg
     finally:
         if not device_released:
             _release_device_after_job(device_id)
 
-        try:
-            os.unlink(audio_path)
-        except OSError:
-            pass
+        if delete_audio:
+            try:
+                os.unlink(audio_path)
+            except OSError:
+                pass
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+async def _start_dispatcher():
+    """Start the background dispatcher thread once on app startup."""
+    global _dispatcher_thread
+    if _dispatcher_thread is None or not _dispatcher_thread.is_alive():
+        _dispatcher_thread = threading.Thread(target=_dispatcher_loop, daemon=True)
+        _dispatcher_thread.start()
+        logger.info("Dispatcher thread started")
 
 
 @app.get("/status")
@@ -268,8 +373,8 @@ async def submit_transcribe(
         os.close(fd)
     with _jobs_lock:
         jobs[job_id] = {"status": "pending", "progress": 0.0, "result": None, "error": None}
-    # Enqueue job; dispatcher thread will pick devices and schedule execution.
-    _job_queue.put((job_id, path, language))
+    # Enqueue job with attempt counter; dispatcher thread will pick devices and schedule execution.
+    _job_queue.put((job_id, path, language, 0))
     return JSONResponse(status_code=202, content={"job_id": job_id})
 
 

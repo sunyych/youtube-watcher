@@ -10,10 +10,11 @@ services:
       - "${PORT:-8765}:8765"
     environment:
       PORT: 8765
-      WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-medium}
+      WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-large-v3}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
-      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-3}
-      NUM_GPUS: ${NUM_GPUS:-3}
+      # Only GPUs 1,2 are exposed via device_ids below; in container they are cuda:0, cuda:1
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-2}
+      NUM_GPUS: ${NUM_GPUS:-2}
       AUDIO_TARGET_SAMPLE_RATE: ${AUDIO_TARGET_SAMPLE_RATE:-16000}
       VAD_THRESHOLD: ${VAD_THRESHOLD:-0.5}
       VAD_MIN_SILENCE_DURATION_MS: ${VAD_MIN_SILENCE_DURATION_MS:-2000}
@@ -24,8 +25,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # Expose all available GPUs inside the container so NUM_GPUS/MAX_CONCURRENT_JOBS
-              # can safely be set to the physical GPU count (e.g. 3).
-              count: all
+              # Only expose physical GPUs 1 and 2 (container sees them as cuda:0, cuda:1)
+              device_ids: ['1', '2']
               capabilities: [gpu]
     restart: unless-stopped
