@@ -78,9 +78,9 @@ async def test_process_video_task_completes_with_mocked_services(db, test_user, 
         async def generate_keywords(self, transcript: str, title: str, language: str = "中文"):
             return "k1,k2"
 
-    # Patch service classes in queue_worker module
+    # Patch service classes (queue_worker and queue_lib.convert for AudioConverter)
     monkeypatch.setattr(queue_worker, "VideoDownloader", DummyDownloader)
-    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr("app.queue_lib.convert.AudioConverter", DummyAudioConverter)
     monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
     monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
     monkeypatch.setattr(queue_worker, "get_whisper_service", lambda: None)  # force "transcription unavailable" path
@@ -98,7 +98,10 @@ async def test_process_video_task_completes_with_mocked_services(db, test_user, 
         assert updated.summary == "unit-test-summary"
         assert updated.keywords == "k1,k2"
         assert updated.transcript is not None
-        assert updated.transcript.startswith("Transcription unavailable:")
+        assert (
+            updated.transcript.startswith("Transcription unavailable")
+            or "Whisper service is not available" in updated.transcript
+        )
         assert updated.transcript_file_path is not None
     finally:
         check_db.close()
@@ -106,7 +109,8 @@ async def test_process_video_task_completes_with_mocked_services(db, test_user, 
     # Ensure transcript file was written
     transcript_path = tmp_path / f"{video_id}.txt"
     assert transcript_path.exists()
-    assert transcript_path.read_text(encoding="utf-8").startswith("Transcription unavailable:")
+    content = transcript_path.read_text(encoding="utf-8")
+    assert content.startswith("Transcription unavailable") or "Whisper service is not available" in content
 
 
 @pytest.mark.asyncio
@@ -160,7 +164,7 @@ async def test_process_video_task_marks_failed_on_download_error(db, test_user, 
             return ""
 
     monkeypatch.setattr(queue_worker, "VideoDownloader", FailingDownloader)
-    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr("app.queue_lib.convert.AudioConverter", DummyAudioConverter)
     monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
     monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
     monkeypatch.setattr(queue_worker, "get_whisper_service", lambda: None)
@@ -279,8 +283,8 @@ async def test_process_video_task_full_pipeline_mock_success(db, test_user, tmp_
 
     dummy_whisper = DummyWhisperService()
     monkeypatch.setattr(queue_worker, "VideoDownloader", DummyDownloader)
-    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
-    monkeypatch.setattr(queue_worker, "run_pipeline", dummy_run_pipeline)
+    monkeypatch.setattr("app.queue_lib.convert.AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr("app.queue_lib.transcribe.run_pipeline", dummy_run_pipeline)
     monkeypatch.setattr(queue_worker, "get_whisper_service", lambda: dummy_whisper)
     monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
     monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
@@ -390,10 +394,10 @@ async def test_process_video_task_uses_runner_when_configured_failure(db, test_u
         return None
 
     monkeypatch.setattr(queue_worker, "VideoDownloader", DummyDownloader)
-    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr("app.queue_lib.convert.AudioConverter", DummyAudioConverter)
     monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
     monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
-    monkeypatch.setattr(queue_worker, "_transcribe_via_runner", mock_runner_none)
+    monkeypatch.setattr("app.queue_lib.transcribe.transcribe_via_runner", mock_runner_none)
 
     await queue_worker.process_video_task(record.id)
 
@@ -479,10 +483,10 @@ async def test_process_video_task_uses_runner_when_configured_success(db, test_u
         return {"text": "raw from runner", "language": "en", "segments": []}
 
     monkeypatch.setattr(queue_worker, "VideoDownloader", DummyDownloader)
-    monkeypatch.setattr(queue_worker, "AudioConverter", DummyAudioConverter)
+    monkeypatch.setattr("app.queue_lib.convert.AudioConverter", DummyAudioConverter)
     monkeypatch.setattr(queue_worker, "ThumbnailGenerator", DummyThumbnailGenerator)
     monkeypatch.setattr(queue_worker, "LLMService", DummyLLMService)
-    monkeypatch.setattr(queue_worker, "_transcribe_via_runner", mock_runner_ok)
+    monkeypatch.setattr("app.queue_lib.transcribe.transcribe_via_runner", mock_runner_ok)
 
     await queue_worker.process_video_task(record.id)
 

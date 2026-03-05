@@ -179,7 +179,8 @@
     "autoPlaylistTitle": "将该频道新视频自动加入播放列表",
     "autoPlaylistNone": "不自动加入",
     "autoPlaylistSet": "新视频 → {{name}}",
-    "autoPlaylistUpdated": "已更新"
+    "autoPlaylistUpdated": "已更新",
+    "loadMoreChannel": "加载更多此频道的视频"
   },
   "playlist": {
     "title": "播放列表",
