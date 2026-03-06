@@ -12,7 +12,8 @@ services:
       PORT: 8765
       WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-large-v3}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
-      # Only GPUs 1,2 are exposed via device_ids below; in container they are cuda:0, cuda:1
+      # All GPUs passed in; software selects which to use: GPU_NAME_FILTER=3060 uses only GPUs whose name contains "3060" (e.g. two RTX 3060s). Else set CUDA_VISIBLE_DEVICES.
+      GPU_NAME_FILTER: ${GPU_NAME_FILTER:-3060}
       MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-2}
       NUM_GPUS: ${NUM_GPUS:-2}
       AUDIO_TARGET_SAMPLE_RATE: ${AUDIO_TARGET_SAMPLE_RATE:-16000}
@@ -25,7 +26,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # Only expose physical GPUs 1 and 2 (container sees them as cuda:0, cuda:1)
-              device_ids: ['1', '2']
+              # Pass all GPUs into container; which to use is controlled by CUDA_VISIBLE_DEVICES (e.g. 1,2 for two 3060s)
+              count: all
               capabilities: [gpu]
     restart: unless-stopped

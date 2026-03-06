@@ -35,6 +35,8 @@ docker run --gpus all -p 8765:8765 -e WHISPER_DEVICE=cuda transcribe_runner
 - `WHISPER_DEVICE` — `cuda` or `cpu`. Default is **`cuda`** when using Docker Compose / Dockerfile.gpu. Set to `cpu` if you run the GPU image without a GPU (e.g. fallback).
 - `MAX_CONCURRENT_JOBS` — Max transcription jobs running at once, e.g. one per GPU (default `3`).
 - `NUM_GPUS` — Number of GPUs; jobs are assigned round-robin to `cuda:0` … `cuda:(NUM_GPUS-1)` (default same as `MAX_CONCURRENT_JOBS`).
+- `GPU_NAME_FILTER` — If set (e.g. `3060`), at startup the service runs `nvidia-smi`, keeps only GPUs whose name contains this string (case-insensitive), and sets `CUDA_VISIBLE_DEVICES` so only those are used. Use this to automatically use only your two RTX 3060s when you have other GPUs in the machine. Default in Docker Compose is **`3060`**.
+- `CUDA_VISIBLE_DEVICES` — Alternative to `GPU_NAME_FILTER`: comma-separated GPU indices (e.g. `1,2`). All GPUs are passed in; this limits which ones the process sees. Ignored if `GPU_NAME_FILTER` is set and matches GPUs.
 - `AUDIO_TARGET_SAMPLE_RATE`, `VAD_*` — Same as backend pipeline (optional; defaults match the main app).
 
 ## Connect the queue to the runner

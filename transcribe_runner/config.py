@@ -44,6 +44,7 @@ PORT = get_int("PORT", 8765)
 # Max concurrent transcription jobs (e.g. one per GPU). Default 3.
 MAX_CONCURRENT_JOBS = max(1, get_int("MAX_CONCURRENT_JOBS", 3))
 # Number of GPUs to use (device ids 0..NUM_GPUS-1). Default same as MAX_CONCURRENT_JOBS.
+# GPU_NAME_FILTER is read in main.py before CUDA init (e.g. "3060" to use only GPUs whose name contains "3060").
 NUM_GPUS = max(1, get_int("NUM_GPUS", MAX_CONCURRENT_JOBS))
 
 # Whether to fully release Whisper GPU models when a device becomes idle (no active jobs).

@@ -6,8 +6,8 @@
 #
 # Usage:
 #   ./restart_if_gpus_idle.sh [CONTAINER_NAME] [THRESHOLD] [INTERVAL] [GPU_IDS]
-# Example (monitor only GPUs 1,2):
-#   ./restart_if_gpus_idle.sh transcribe_runner 30 60 1,2
+# Example (monitor only GPUs 2,3):
+#   ./restart_if_gpus_idle.sh transcribe_runner 30 60 2,3
 #
 # Cron example (every 3 minutes):
 #   */3 * * * * /path/to/transcribe_runner/scripts/restart_if_gpus_idle.sh transcribe_runner 30 60
@@ -18,8 +18,8 @@ set -e
 CONTAINER_NAME="${1:-transcribe_runner}"
 THRESHOLD="${2:-30}"
 INTERVAL="${3:-60}"
-# Only monitor GPUs 1,2 (transcribe uses these two of 0,1,2)
-GPU_IDS="${4:-1,2}"
+# Only monitor GPUs 2,3 (transcribe uses these two)
+GPU_IDS="${4:-2,3}"
 
 # Require nvidia-smi
 if ! command -v nvidia-smi &>/dev/null; then

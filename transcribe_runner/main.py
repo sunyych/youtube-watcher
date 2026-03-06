@@ -5,6 +5,7 @@ Supports multiple concurrent jobs (default 3), one per GPU (cuda:0, cuda:1, cuda
 """
 import logging
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -12,6 +13,46 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
+
+
+def _apply_gpu_name_filter() -> None:
+    """
+    If GPU_NAME_FILTER is set (e.g. "3060"), query nvidia-smi for GPU names,
+    keep only GPUs whose name contains that string, and set CUDA_VISIBLE_DEVICES
+    so only those are visible (e.g. only two RTX 3060s). Must run before any
+    import that uses CUDA/torch.
+    """
+    filter_name = os.environ.get("GPU_NAME_FILTER", "").strip()
+    if not filter_name:
+        return
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader,nounits"],
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print(f"[transcribe_runner] GPU_NAME_FILTER set but nvidia-smi failed: {e}", flush=True)
+        return
+    indices: list[str] = []
+    for line in out.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(",", 1)
+        if len(parts) != 2:
+            continue
+        idx_str, name = parts[0].strip(), parts[1].strip()
+        if filter_name.lower() in name.lower():
+            indices.append(idx_str)
+    if indices:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(indices)
+        print(f"[transcribe_runner] GPU_NAME_FILTER={filter_name!r} -> using GPU(s) {indices}: only these will be visible as cuda:0, cuda:1, ...", flush=True)
+    else:
+        print(f"[transcribe_runner] GPU_NAME_FILTER={filter_name!r} matched no GPU; leaving CUDA_VISIBLE_DEVICES unchanged", flush=True)
+
+
+_apply_gpu_name_filter()
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
